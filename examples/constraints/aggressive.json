@@ -1,0 +1,11 @@
+{
+  "max_position_pct": 0.30,
+  "max_single_trade_pct": 0.10,
+  "max_leverage": 2.0,
+  "max_drawdown_pct": 0.20,
+  "allowed_symbols": ["AMZN", "MSFT", "TSLA", "BTC-USD"],
+  "max_open_positions": 5,
+  "min_risk_reward": 1.2,
+  "max_rounds": 3,
+  "abort_on_violations": ["max_leverage", "max_drawdown_pct"]
+}

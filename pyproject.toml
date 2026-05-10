@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "player-coach-core"
+version = "0.1.0"
+description = "Adversarial quality loop for trading decisions"
+requires-python = ">=3.11"
+dependencies = [
+    "ewm-core",
+]
+
+[project.optional-dependencies]
+llm = [
+    "anthropic>=0.40.0",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"

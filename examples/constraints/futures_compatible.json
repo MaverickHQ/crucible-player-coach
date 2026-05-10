@@ -1,0 +1,11 @@
+{
+  "max_position_pct": 0.10,
+  "max_single_trade_pct": 0.03,
+  "max_leverage": 1.0,
+  "max_drawdown_pct": 0.05,
+  "allowed_symbols": ["AMZN", "MSFT"],
+  "max_open_positions": 2,
+  "min_risk_reward": 3.0,
+  "max_rounds": 1,
+  "abort_on_violations": ["max_leverage", "max_drawdown_pct", "max_position_pct"]
+}
