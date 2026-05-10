@@ -7,6 +7,12 @@ from player_coach.agents.coach import CoachAgent
 from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
+from player_coach.loop.circuit_breakers import (
+    is_daily_loss_limit_breached,
+    is_consistency_rule_breached,
+    is_trading_cutoff_reached,
+    is_mll_breached,
+)
 
 if TYPE_CHECKING:
     from player_coach.portfolio.state import PortfolioState
@@ -41,6 +47,32 @@ class CoachLoop:
 
         if portfolio_state is not None:
             world_state = {**world_state, **portfolio_state.to_dict()}
+
+        if portfolio_state is not None:
+            if is_mll_breached(portfolio_state, constraints):
+                return self._abort_artifact(
+                    "mll_breached", world_state, constraints,
+                    portfolio_state, strategy_id,
+                    db_store, writer, output_dir,
+                )
+            if is_daily_loss_limit_breached(portfolio_state, constraints):
+                return self._abort_artifact(
+                    "daily_loss_limit", world_state, constraints,
+                    portfolio_state, strategy_id,
+                    db_store, writer, output_dir,
+                )
+            if is_consistency_rule_breached(portfolio_state, constraints):
+                return self._abort_artifact(
+                    "consistency_rule", world_state, constraints,
+                    portfolio_state, strategy_id,
+                    db_store, writer, output_dir,
+                )
+            if is_trading_cutoff_reached(constraints):
+                return self._abort_artifact(
+                    "trading_cutoff", world_state, constraints,
+                    portfolio_state, strategy_id,
+                    db_store, writer, output_dir,
+                )
 
         max_rounds = constraints.max_rounds
         rounds: list[dict[str, Any]] = []
@@ -100,10 +132,39 @@ class CoachLoop:
         artifact["portfolio_snapshot"] = (
             portfolio_state.to_dict() if portfolio_state is not None else None
         )
-        artifact["strategy_id"] = strategy_id
         artifact["symbol"] = world_state.get("symbol")
+        artifact["strategy_id"] = strategy_id
 
         if db_store is not None:
             db_store.save_exchange(artifact)
 
+        return artifact
+
+    def _abort_artifact(
+        self,
+        reason: str,
+        world_state: dict[str, Any],
+        constraints: ConstraintSchema,
+        portfolio_state: PortfolioState | None,
+        strategy_id: str | None,
+        db_store: DatabaseStore | None,
+        writer: ArtifactWriter,
+        output_dir: str | Path,
+    ) -> dict[str, Any]:
+        artifact_path = writer.write(
+            constraints=constraints.to_dict(),
+            world_state=world_state,
+            rounds=[],
+            outcome="ABORT",
+        )
+        artifact = json.loads(artifact_path.read_text())
+        artifact["termination_reason"] = reason
+        artifact["constraint_snapshot"] = constraints.to_dict()
+        artifact["portfolio_snapshot"] = (
+            portfolio_state.to_dict() if portfolio_state is not None else None
+        )
+        artifact["strategy_id"] = strategy_id
+        artifact["symbol"] = world_state.get("symbol")
+        if db_store is not None:
+            db_store.save_exchange(artifact)
         return artifact
