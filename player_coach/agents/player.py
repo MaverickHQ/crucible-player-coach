@@ -58,12 +58,13 @@ Respond with valid JSON only — no markdown, no explanation outside the JSON:
 {
   "actions": [
     {
+      "action_type": "enter_long" | "enter_short" | "exit_position" | "hold",
       "symbol": "<ticker>",
-      "side": "buy" | "sell",
-      "size_pct": <float, fraction of portfolio>,
-      "entry_price": <float>,
-      "stop_loss": <float>,
-      "take_profit": <float>
+      "position_id": "<uuid or null>",
+      "size_pct": <float or null for exits/holds>,
+      "entry_price": <float or null>,
+      "stop_loss": <float or null>,
+      "take_profit": <float or null>
     }
   ],
   "reasoning": "<one paragraph explaining the rationale>"
@@ -71,10 +72,13 @@ Respond with valid JSON only — no markdown, no explanation outside the JSON:
 
 Rules:
 - Only propose symbols from the allowed list.
-- Each action's size_pct must not exceed max_single_trade_pct.
+- Each entry action's size_pct must not exceed max_single_trade_pct.
 - Total open positions must not exceed max_open_positions.
-- Risk/reward (|take_profit - entry| / |entry - stop_loss|) must meet min_risk_reward.
+- Risk/reward (|take_profit - entry| / |entry - stop_loss|) must meet min_risk_reward for entry actions.
 - Do not exceed max_leverage.
+- For exit_position: include the position_id of the position being closed from open_positions.
+- For hold: actions list may be empty or contain one hold action.
+- Only propose exit_position if there is an open position to close.
 - If revising, address every critique raised by the Coach.\
 """
 
@@ -86,6 +90,26 @@ def _build_user_prompt(
 ) -> str:
     parts: list[str] = []
     parts.append("## World state\n" + json.dumps(world_state, indent=2))
+
+    if "capital" in world_state:
+        capital = world_state.get("capital", 0)
+        cash_available = world_state.get("cash_available", 0)
+        daily_pnl = world_state.get("daily_pnl", 0.0)
+        daily_pnl_pct = world_state.get("daily_pnl_pct", 0.0)
+        drawdown_pct = world_state.get("drawdown_pct", 0.0)
+        open_positions = world_state.get("open_positions", [])
+        positions_summary = (
+            json.dumps(open_positions, indent=2) if open_positions else "none"
+        )
+        parts.append(
+            f"## Portfolio\n"
+            f"Capital: ${capital}\n"
+            f"Cash available: ${cash_available}\n"
+            f"Daily P&L: ${daily_pnl} ({daily_pnl_pct}%)\n"
+            f"Drawdown: {drawdown_pct}%\n"
+            f"Open positions: {positions_summary}"
+        )
+
     parts.append(
         "## Constraints\n"
         + json.dumps(constraints.to_dict(), indent=2)

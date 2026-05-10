@@ -7,6 +7,7 @@ from player_coach.agents.coach import CoachAgent
 from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
+from player_coach.database.store import DatabaseStore
 from player_coach.loop.coach_loop import CoachLoop
 
 WORLD_STATE = {
@@ -21,6 +22,7 @@ WORLD_STATE = {
 }
 
 CONSTRAINTS_PATH = Path("examples/constraints/moderate.json")
+DATA_DIR = Path("data")
 OUTPUT_DIR = Path("artifacts")
 
 
@@ -37,8 +39,48 @@ def _print_constraints(constraints: ConstraintSchema) -> None:
     print()
 
 
+def _print_rounds(artifact: dict, output_dir: Path) -> None:
+    for round_ in artifact["rounds"]:
+        n = round_["round"]
+        proposal = round_["proposal"]
+        evaluation = round_["evaluation"]
+        actions = proposal.get("actions", [])
+        action_summary = ", ".join(
+            f"{a.get('action_type', 'unknown').upper()} {a.get('symbol', '')} "
+            f"{a['size_pct']:.1%}" if a.get("size_pct") is not None
+            else f"{a.get('action_type', 'unknown').upper()} {a.get('symbol', '')}"
+            for a in actions
+        ) or "(none)"
+        reasoning = proposal.get("reasoning", "")
+        print(f"Round {n}")
+        print(f"  Player:  {action_summary}")
+        if reasoning:
+            print(f"  Reasoning: {reasoning[:120]}{'...' if len(reasoning) > 120 else ''}")
+        print(f"  Verdict: {evaluation['decision']}")
+        if evaluation["violations"]:
+            print(f"  Violations: {', '.join(evaluation['violations'])}")
+        feedback = evaluation.get("feedback") or ""
+        if feedback:
+            print(f"  Coach: {feedback}")
+        print()
+
+    run_id = artifact["run_id"]
+    print(f"Outcome: {artifact['outcome']}")
+    print(f"Artifact: {output_dir / run_id}.json")
+
+
 def main() -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+    store = DatabaseStore(DATA_DIR / "player_coach.db")
+    strategy_id = "demo-moderate"
     constraints_raw = json.loads(CONSTRAINTS_PATH.read_text())
+    store.save_strategy({
+        "strategy_id": strategy_id,
+        "name": "Demo Moderate",
+        "description": "Demo run — moderate constraints",
+        "constraint_schema": constraints_raw,
+    })
+
     constraints = ConstraintSchema.from_dict(constraints_raw)
 
     player = PlayerAgent()
@@ -54,36 +96,11 @@ def main() -> None:
     artifact = loop.run(
         world_state=WORLD_STATE,
         constraints=constraints,
+        db_store=store,
+        strategy_id=strategy_id,
         output_dir=OUTPUT_DIR,
     )
-
-    for round_ in artifact["rounds"]:
-        n = round_["round"]
-        proposal = round_["proposal"]
-        evaluation = round_["evaluation"]
-        actions = proposal.get("actions", [])
-        action_summary = ", ".join(
-            f"{a['side'].upper()} {a['symbol']} {a['size_pct']:.1%}"
-            for a in actions
-        ) or "(none)"
-        reasoning = proposal.get("reasoning", "")
-        print(f"Round {n}")
-        print(f"  Player:  {action_summary}")
-        if reasoning:
-            print(f"  Reasoning: {reasoning[:120]}{'...' if len(reasoning) > 120 else ''}")
-        print(f"  Verdict: {evaluation['decision']}")
-        if evaluation["violations"]:
-            print(f"  Violations: {', '.join(evaluation['violations'])}")
-        feedback = evaluation.get("feedback") or ""
-        if feedback:
-            print(f"  Coach: {feedback}")
-        print()
-
-    outcome = artifact["outcome"]
-    run_id = artifact["run_id"]
-    artifact_path = OUTPUT_DIR / f"{run_id}.json"
-    print(f"Outcome: {outcome}")
-    print(f"Artifact: {artifact_path}")
+    _print_rounds(artifact, OUTPUT_DIR)
 
     print("\n" + "="*50)
     print("Scenario 2 — strict constraints")
@@ -98,33 +115,20 @@ def main() -> None:
     artifact2 = loop.run(
         world_state=WORLD_STATE,
         constraints=strict_constraints,
+        db_store=store,
+        strategy_id=strategy_id,
         output_dir=OUTPUT_DIR,
     )
+    _print_rounds(artifact2, OUTPUT_DIR)
 
-    for round_ in artifact2["rounds"]:
-        n = round_["round"]
-        proposal = round_["proposal"]
-        evaluation = round_["evaluation"]
-        actions = proposal.get("actions", [])
-        action_summary = ", ".join(
-            f"{a['side'].upper()} {a['symbol']} {a['size_pct']:.1%}"
-            for a in actions
-        ) or "(none)"
-        reasoning = proposal.get("reasoning", "")
-        print(f"Round {n}")
-        print(f"  Player:  {action_summary}")
-        if reasoning:
-            print(f"  Reasoning: {reasoning[:120]}{'...' if len(reasoning) > 120 else ''}")
-        print(f"  Verdict: {evaluation['decision']}")
-        if evaluation["violations"]:
-            print(f"  Violations: {', '.join(evaluation['violations'])}")
-        feedback = evaluation.get("feedback") or ""
-        if feedback:
-            print(f"  Coach: {feedback}")
-        print()
-
-    print(f"Outcome: {artifact2['outcome']}")
-    print(f"Artifact: {OUTPUT_DIR / artifact2['run_id']}.json")
+    print("\n--- Exchange history ---")
+    for ex in store.get_exchanges():
+        print(
+            f"{ex['run_id'][:8]}  "
+            f"{ex['outcome']:12}  "
+            f"rounds={ex['rounds_taken']}  "
+            f"tokens={ex['total_tokens']}"
+        )
 
 
 if __name__ == "__main__":

@@ -1,12 +1,16 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from player_coach.agents.coach import CoachAgent
 from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
+
+if TYPE_CHECKING:
+    from player_coach.portfolio.state import PortfolioState
+    from player_coach.database.store import DatabaseStore
 
 
 class CoachLoop:
@@ -24,6 +28,9 @@ class CoachLoop:
         self,
         world_state: dict[str, Any],
         constraints: ConstraintSchema,
+        portfolio_state: PortfolioState | None = None,
+        db_store: DatabaseStore | None = None,
+        strategy_id: str | None = None,
         output_dir: str | Path = "artifacts",
     ) -> dict[str, Any]:
         writer = (
@@ -31,6 +38,10 @@ class CoachLoop:
             if Path(output_dir) == self._writer.output_dir
             else ArtifactWriter(output_dir)
         )
+
+        if portfolio_state is not None:
+            world_state = {**world_state, **portfolio_state.to_dict()}
+
         max_rounds = constraints.max_rounds
         rounds: list[dict[str, Any]] = []
         history: list[dict[str, Any]] = []
@@ -83,4 +94,16 @@ class CoachLoop:
             rounds=rounds,
             outcome=outcome,
         )
-        return json.loads(artifact_path.read_text())
+        artifact = json.loads(artifact_path.read_text())
+
+        artifact["constraint_snapshot"] = constraints.to_dict()
+        artifact["portfolio_snapshot"] = (
+            portfolio_state.to_dict() if portfolio_state is not None else None
+        )
+        artifact["strategy_id"] = strategy_id
+        artifact["symbol"] = world_state.get("symbol")
+
+        if db_store is not None:
+            db_store.save_exchange(artifact)
+
+        return artifact
