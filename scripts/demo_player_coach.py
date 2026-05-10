@@ -74,8 +74,9 @@ def main() -> None:
         print(f"  Verdict: {evaluation['decision']}")
         if evaluation["violations"]:
             print(f"  Violations: {', '.join(evaluation['violations'])}")
-        if evaluation["feedback"]:
-            print(f"  Critique: {evaluation['feedback']}")
+        feedback = evaluation.get("feedback") or ""
+        if feedback:
+            print(f"  Coach: {feedback}")
         print()
 
     outcome = artifact["outcome"]
@@ -117,8 +118,9 @@ def main() -> None:
         print(f"  Verdict: {evaluation['decision']}")
         if evaluation["violations"]:
             print(f"  Violations: {', '.join(evaluation['violations'])}")
-        if evaluation["feedback"]:
-            print(f"  Critique: {evaluation['feedback']}")
+        feedback = evaluation.get("feedback") or ""
+        if feedback:
+            print(f"  Coach: {feedback}")
         print()
 
     print(f"Outcome: {artifact2['outcome']}")

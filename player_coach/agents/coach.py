@@ -70,7 +70,7 @@ Respond with valid JSON only:
 {
   "verdict": "APPROVE" | "REJECT",
   "violations": ["<constraint_name>", ...],
-  "critique": "<one line per violation: constraint_name: actual X vs limit Y — null if approved>"
+  "critique": "<one line per constraint checked: constraint_name: actual X vs limit Y — PASS or FAIL. Always populate this field, even on APPROVE.>"
 }
 
 Check each action:
