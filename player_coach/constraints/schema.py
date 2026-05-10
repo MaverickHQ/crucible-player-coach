@@ -14,6 +14,23 @@ class ConstraintSchema:
     min_risk_reward: float
     abort_on_violations: list[str]
     max_rounds: int = 3
+    max_daily_loss_pct: float = 0.02
+    consistency_rule_pct: float = 0.50
+    trading_cutoff_time: str = "16:20"
+
+    def is_daily_loss_breached(
+        self, daily_pnl: float, daily_starting_balance: float
+    ) -> bool:
+        if daily_starting_balance == 0.0:
+            return False
+        return (-daily_pnl / daily_starting_balance) > self.max_daily_loss_pct
+
+    def is_consistency_breached(
+        self, day_pnl: float, cumulative_pnl: float
+    ) -> bool:
+        if cumulative_pnl <= 0.0:
+            return False
+        return day_pnl > self.consistency_rule_pct * cumulative_pnl
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConstraintSchema:
@@ -27,6 +44,9 @@ class ConstraintSchema:
             min_risk_reward=data["min_risk_reward"],
             abort_on_violations=data["abort_on_violations"],
             max_rounds=data.get("max_rounds", 3),
+            max_daily_loss_pct=data.get("max_daily_loss_pct", 0.02),
+            consistency_rule_pct=data.get("consistency_rule_pct", 0.50),
+            trading_cutoff_time=data.get("trading_cutoff_time", "16:20"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,4 +60,7 @@ class ConstraintSchema:
             "min_risk_reward": self.min_risk_reward,
             "max_rounds": self.max_rounds,
             "abort_on_violations": self.abort_on_violations,
+            "max_daily_loss_pct": self.max_daily_loss_pct,
+            "consistency_rule_pct": self.consistency_rule_pct,
+            "trading_cutoff_time": self.trading_cutoff_time,
         }

@@ -12,6 +12,9 @@ BASE = {
     "min_risk_reward": 1.5,
     "max_rounds": 3,
     "abort_on_violations": ["max_leverage", "max_drawdown_pct"],
+    "max_daily_loss_pct": 0.02,
+    "consistency_rule_pct": 0.50,
+    "trading_cutoff_time": "16:20",
 }
 
 
@@ -34,6 +37,9 @@ def test_to_dict_expected_keys():
         "min_risk_reward",
         "max_rounds",
         "abort_on_violations",
+        "max_daily_loss_pct",
+        "consistency_rule_pct",
+        "trading_cutoff_time",
     }
     assert keys == expected
 

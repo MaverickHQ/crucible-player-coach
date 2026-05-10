@@ -7,5 +7,8 @@
   "max_open_positions": 5,
   "min_risk_reward": 1.2,
   "max_rounds": 3,
-  "abort_on_violations": ["max_leverage", "max_drawdown_pct"]
+  "abort_on_violations": ["max_leverage", "max_drawdown_pct"],
+  "max_daily_loss_pct": 0.03,
+  "consistency_rule_pct": 0.50,
+  "trading_cutoff_time": "16:20"
 }

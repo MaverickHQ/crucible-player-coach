@@ -11,5 +11,8 @@
     "max_leverage",
     "max_drawdown_pct",
     "max_position_pct"
-  ]
+  ],
+  "max_daily_loss_pct": 0.01,
+  "consistency_rule_pct": 0.40,
+  "trading_cutoff_time": "16:20"
 }
