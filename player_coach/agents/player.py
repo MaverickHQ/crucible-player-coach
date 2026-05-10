@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 from typing import Any
 
 from player_coach.constraints.schema import ConstraintSchema
@@ -32,7 +33,10 @@ class PlayerAgent:
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
         )
-        text = response.content[0].text
+        text = response.content[0].text.strip()
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            text = match.group(0)
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:

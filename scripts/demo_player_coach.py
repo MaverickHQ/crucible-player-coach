@@ -52,8 +52,11 @@ def main() -> None:
             f"{a['side'].upper()} {a['symbol']} {a['size_pct']:.1%}"
             for a in actions
         ) or "(none)"
+        reasoning = proposal.get("reasoning", "")
         print(f"Round {n}")
         print(f"  Player:  {action_summary}")
+        if reasoning:
+            print(f"  Reasoning: {reasoning[:120]}{'...' if len(reasoning) > 120 else ''}")
         print(f"  Verdict: {evaluation['decision']}")
         if evaluation["violations"]:
             print(f"  Violations: {', '.join(evaluation['violations'])}")
@@ -66,6 +69,45 @@ def main() -> None:
     artifact_path = OUTPUT_DIR / f"{run_id}.json"
     print(f"Outcome: {outcome}")
     print(f"Artifact: {artifact_path}")
+
+    print("\n" + "="*50)
+    print("Scenario 2 — strict constraints")
+    print("="*50 + "\n")
+
+    strict_path = Path("examples/constraints/strict.json")
+    strict_constraints = ConstraintSchema.from_dict(
+        json.loads(strict_path.read_text())
+    )
+
+    artifact2 = loop.run(
+        world_state=WORLD_STATE,
+        constraints=strict_constraints,
+        output_dir=OUTPUT_DIR,
+    )
+
+    for round_ in artifact2["rounds"]:
+        n = round_["round"]
+        proposal = round_["proposal"]
+        evaluation = round_["evaluation"]
+        actions = proposal.get("actions", [])
+        action_summary = ", ".join(
+            f"{a['side'].upper()} {a['symbol']} {a['size_pct']:.1%}"
+            for a in actions
+        ) or "(none)"
+        reasoning = proposal.get("reasoning", "")
+        print(f"Round {n}")
+        print(f"  Player:  {action_summary}")
+        if reasoning:
+            print(f"  Reasoning: {reasoning[:120]}{'...' if len(reasoning) > 120 else ''}")
+        print(f"  Verdict: {evaluation['decision']}")
+        if evaluation["violations"]:
+            print(f"  Violations: {', '.join(evaluation['violations'])}")
+        if evaluation["feedback"]:
+            print(f"  Critique: {evaluation['feedback']}")
+        print()
+
+    print(f"Outcome: {artifact2['outcome']}")
+    print(f"Artifact: {OUTPUT_DIR / artifact2['run_id']}.json")
 
 
 if __name__ == "__main__":
