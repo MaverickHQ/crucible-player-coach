@@ -24,6 +24,19 @@ CONSTRAINTS_PATH = Path("examples/constraints/moderate.json")
 OUTPUT_DIR = Path("artifacts")
 
 
+def _print_constraints(constraints: ConstraintSchema) -> None:
+    print("  Active constraints:")
+    print(f"    max_position_pct:      {constraints.max_position_pct:.0%}")
+    print(f"    max_single_trade_pct:  {constraints.max_single_trade_pct:.0%}")
+    print(f"    max_open_positions:    {constraints.max_open_positions}")
+    print(f"    min_risk_reward:       {constraints.min_risk_reward}x")
+    print(f"    max_leverage:          {constraints.max_leverage}x")
+    print(f"    max_drawdown_pct:      {constraints.max_drawdown_pct:.0%}")
+    print(f"    max_rounds:            {constraints.max_rounds}")
+    print(f"    abort_on_violations:   {constraints.abort_on_violations}")
+    print()
+
+
 def main() -> None:
     constraints_raw = json.loads(CONSTRAINTS_PATH.read_text())
     constraints = ConstraintSchema.from_dict(constraints_raw)
@@ -36,6 +49,7 @@ def main() -> None:
     print("Running player-coach loop...")
     print(f"World state: AMZN @ ${WORLD_STATE['price']}, session={WORLD_STATE['session']}")
     print(f"Max rounds: {constraints.max_rounds}\n")
+    _print_constraints(constraints)
 
     artifact = loop.run(
         world_state=WORLD_STATE,
@@ -78,6 +92,7 @@ def main() -> None:
     strict_constraints = ConstraintSchema.from_dict(
         json.loads(strict_path.read_text())
     )
+    _print_constraints(strict_constraints)
 
     artifact2 = loop.run(
         world_state=WORLD_STATE,
