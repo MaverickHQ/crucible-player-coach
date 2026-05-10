@@ -1,0 +1,65 @@
+{
+  "run_id": "cb557db3-adac-4bf2-b6ca-f188b67a3f94",
+  "timestamp": "2026-05-10T10:39:58.604295+00:00",
+  "outcome": "APPROVE",
+  "approved": true,
+  "rounds_taken": 1,
+  "termination_reason": "APPROVE",
+  "total_tokens": 1751,
+  "constraints": {
+    "max_position_pct": 0.15,
+    "max_single_trade_pct": 0.05,
+    "max_leverage": 1.5,
+    "max_drawdown_pct": 0.1,
+    "allowed_symbols": [
+      "AMZN",
+      "MSFT",
+      "TSLA",
+      "BTC-USD"
+    ],
+    "max_open_positions": 3,
+    "min_risk_reward": 1.5,
+    "max_rounds": 3,
+    "abort_on_violations": [
+      "max_leverage",
+      "max_drawdown_pct"
+    ]
+  },
+  "world_state": {
+    "symbol": "AMZN",
+    "price": 185.0,
+    "sma5": 183.0,
+    "sma10": 180.0,
+    "volume": 45000000,
+    "position": "flat",
+    "volatility_regime": "medium",
+    "session": "NY_open"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "proposal": {
+        "actions": [
+          {
+            "symbol": "AMZN",
+            "side": "buy",
+            "size_pct": 0.05,
+            "entry_price": 185.0,
+            "stop_loss": 181.5,
+            "take_profit": 190.5
+          }
+        ],
+        "reasoning": "AMZN is trading above both SMA5 (183.0) and SMA10 (180.0), indicating upward momentum in a medium volatility regime. The NY session open provides liquidity with 45M volume. A long position with entry at 185.0, stop at 181.5 (3.5pt loss), and target at 190.5 (5.5pt gain) yields a risk/reward ratio of 1.57x, meeting the 1.5x minimum. Position size of 5% keeps well within the 5% single-trade limit and 15% max position constraint. This modest allocation preserves capital for additional opportunities while capturing upside momentum."
+      },
+      "evaluation": {
+        "decision": "APPROVE",
+        "violations": [],
+        "feedback": "allowed_symbols: AMZN in [AMZN, MSFT, TSLA, BTC-USD] \u2014 PASS. max_single_trade_pct: 0.05 <= 0.05 \u2014 PASS. max_open_positions: 1 action <= 3 \u2014 PASS. max_position_pct: 0.05 total <= 0.15 \u2014 PASS. min_risk_reward: |190.5 - 185.0| / |185.0 - 181.5| = 5.5 / 3.5 = 1.57 >= 1.5 \u2014 PASS."
+      },
+      "tokens_used": {
+        "player": 775,
+        "coach": 976
+      }
+    }
+  ]
+}
