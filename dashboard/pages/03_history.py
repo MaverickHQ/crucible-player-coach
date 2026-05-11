@@ -173,4 +173,4 @@ if selected_rows:
             "constraint_snapshot": constraint_snapshot,
         }
         st.session_state.replay_artifact = artifact
-        st.switch_page("dashboard/pages/01_exchange.py")
+        st.switch_page("pages/01_exchange.py")

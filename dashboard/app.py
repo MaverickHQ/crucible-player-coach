@@ -12,10 +12,10 @@ st.set_page_config(
 
 init_session_state()
 
-exchange = st.Page("dashboard/pages/01_exchange.py", title="Exchange", icon="🎯")
-constraints = st.Page("dashboard/pages/02_constraints.py", title="Constraints", icon="📋")
-history = st.Page("dashboard/pages/03_history.py", title="History", icon="📜")
-settings = st.Page("dashboard/pages/04_settings.py", title="Settings", icon="⚙️")
+exchange = st.Page("pages/01_exchange.py", title="Exchange", icon="🎯")
+constraints = st.Page("pages/02_constraints.py", title="Constraints", icon="📋")
+history = st.Page("pages/03_history.py", title="History", icon="📜")
+settings = st.Page("pages/04_settings.py", title="Settings", icon="⚙️")
 
 pg = st.navigation([exchange, constraints, history, settings])
 
