@@ -130,6 +130,39 @@ def main() -> None:
             f"tokens={ex['total_tokens']}"
         )
 
+    print("\n" + "="*50)
+    print("Scenario 3 — backtest AMZN 2024-01-02 to 2024-01-15")
+    print("="*50 + "\n")
+
+    from player_coach.backtest.runner import BacktestRunner
+
+    backtest_strategy_id = "demo-backtest-moderate"
+    store.save_strategy({
+        "strategy_id": backtest_strategy_id,
+        "name": "Demo Backtest Moderate",
+        "description": "10-day backtest — moderate constraints",
+        "constraint_schema": constraints_raw,
+    })
+
+    runner = BacktestRunner(
+        loop=loop,
+        db_store=store,
+        strategy_id=backtest_strategy_id,
+    )
+    result = runner.run(
+        symbol="AMZN",
+        start_date="2024-01-02",
+        end_date="2024-01-15",
+        constraints=constraints,
+        output_dir=OUTPUT_DIR,
+    )
+
+    print(f"Days run:         {result.days_run}")
+    print(f"Total exchanges:  {result.total_exchanges}")
+    print(f"Final capital:    ${result.final_capital:,.2f}")
+    print(f"Total P&L:        ${result.total_pnl:+,.2f} ({result.total_pnl_pct:+.2%})")
+    print(f"Max drawdown:     {result.max_drawdown_pct:.2%}")
+
 
 if __name__ == "__main__":
     main()
