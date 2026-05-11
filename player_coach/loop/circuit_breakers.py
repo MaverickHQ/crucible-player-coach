@@ -32,7 +32,8 @@ def is_trading_cutoff_reached(
     current_time_str: str | None = None,
 ) -> bool:
     if current_time_str is None:
-        current_time_str = datetime.now().strftime("%H:%M")
+        from zoneinfo import ZoneInfo
+        current_time_str = datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M")
     return current_time_str >= constraints.trading_cutoff_time
 
 
@@ -40,5 +41,5 @@ def is_mll_breached(
     portfolio: PortfolioState,
     constraints: ConstraintSchema,
 ) -> bool:
-    floor = portfolio.daily_starting_balance * (1 - constraints.max_drawdown_pct)
+    floor = portfolio.peak_capital * (1 - constraints.max_drawdown_pct)
     return portfolio.capital <= floor

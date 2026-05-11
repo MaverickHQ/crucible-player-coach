@@ -62,20 +62,22 @@ class ConstraintDeriver:
         ]
         if not rr_values:
             return 1.5
-        return min(rr_values)
+        rr_values.sort()
+        idx = max(0, int(len(rr_values) * 0.25) - 1)
+        return rr_values[idx]
 
     def _derive_symbols(self, patterns: list[dict[str, Any]]) -> list[str]:
-        high_confidence = [
+        qualified_symbols = [
             p["symbol"]
             for p in patterns
-            if "symbol" in p and p.get("confidence", 0.0) > 0.0
+            if "symbol" in p and p.get("confidence", 0.0) >= 0.6
         ]
-        if not high_confidence:
+        if not qualified_symbols:
             return list(_DEFAULT_SYMBOLS)
         seen: dict[str, float] = {}
         for p in patterns:
             sym = p.get("symbol")
             conf = p.get("confidence", 0.0)
-            if sym and conf > 0.0:
+            if sym and conf >= 0.6:
                 seen[sym] = max(seen.get(sym, 0.0), conf)
         return sorted(seen, key=lambda s: seen[s], reverse=True)

@@ -1,10 +1,24 @@
 from __future__ import annotations
 import json
 import os
-import re
 from typing import Any
 
 from player_coach.constraints.schema import ConstraintSchema
+
+
+def _extract_json(text: str) -> str:
+    depth = 0
+    start = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if start is None:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                return text[start : i + 1]
+    return text
 
 
 class CoachAgent:
@@ -39,9 +53,7 @@ class CoachAgent:
         if not response.content:
             raise ValueError("CoachAgent received empty response from API")
         text = response.content[0].text.strip()
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            text = match.group(0)
+        text = _extract_json(text)
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:

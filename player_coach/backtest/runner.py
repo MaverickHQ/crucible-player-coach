@@ -37,6 +37,7 @@ class _RunnerPosition:
     entry_price: float
     cost: float
     position_id: str
+    prev_close: float = 0.0
 
 
 def _compute_sma(prices: list[float], n: int) -> float:
@@ -99,7 +100,7 @@ class BacktestRunner:
             close_prices.append(close)
 
             daily_pnl = sum(
-                (close - p.entry_price) / p.entry_price * p.cost
+                (close - p.prev_close) / p.prev_close * p.cost if p.prev_close else 0.0
                 for p in open_positions
             )
 
@@ -153,6 +154,7 @@ class BacktestRunner:
                                 entry_price=entry_price,
                                 cost=cost,
                                 position_id=pid,
+                                prev_close=entry_price,
                             )
                         )
                         cash_available -= cost
@@ -163,7 +165,6 @@ class BacktestRunner:
                             if pos.position_id == pid:
                                 proceeds = pos.cost * (close / pos.entry_price)
                                 cash_available += proceeds
-                                cumulative_pnl += proceeds - pos.cost
                             else:
                                 remaining.append(pos)
                         open_positions = remaining
@@ -175,6 +176,8 @@ class BacktestRunner:
             peak_capital = max(peak_capital, capital)
             cumulative_pnl = capital - initial_capital
             daily_starting_balance = capital
+            for p in open_positions:
+                p.prev_close = close
 
             self._db_store.save_portfolio_snapshot({
                 "strategy_id": self._strategy_id,
@@ -188,11 +191,16 @@ class BacktestRunner:
                 "open_positions": [p.position_id for p in open_positions],
             })
 
-            if outcome == "ABORT" and termination_reason in (
-                "daily_loss_limit", "mll_breached"
-            ):
+            if outcome == "ABORT" and termination_reason != "trading_cutoff":
                 days_aborted += 1
+
+            if outcome == "ABORT" and termination_reason == "mll_breached":
                 break
+
+            if outcome == "ABORT" and termination_reason in (
+                "daily_loss_limit", "consistency_rule", "trading_cutoff"
+            ):
+                continue
 
         total_pnl = capital - initial_capital
         total_pnl_pct = total_pnl / initial_capital if initial_capital else 0.0

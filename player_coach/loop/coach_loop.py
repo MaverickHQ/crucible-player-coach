@@ -49,6 +49,11 @@ class CoachLoop:
             world_state = {**world_state, **portfolio_state.to_dict()}
 
         if portfolio_state is not None:
+            # Circuit breaker check order (highest priority first):
+            # 1. MLL breached     — peak drawdown exceeded; account terminated, no further trading
+            # 2. Daily loss limit — today's loss too large; skip today, backtest continues
+            # 3. Consistency rule — today's gain too large vs cumulative; skip today
+            # 4. Trading cutoff   — market hours ended; skip today
             if is_mll_breached(portfolio_state, constraints):
                 return self._abort_artifact(
                     "mll_breached", world_state, constraints,

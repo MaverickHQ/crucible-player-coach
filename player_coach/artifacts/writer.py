@@ -24,7 +24,7 @@ class ArtifactWriter:
             "outcome": outcome,  # "APPROVE" | "REJECT-MAX" | "ABORT"
             "approved": outcome == "APPROVE",
             "rounds_taken": len(rounds),
-            "termination_reason": outcome,
+            "termination_reason": outcome if outcome == "ABORT" else None,
             "total_tokens": sum(
                 r.get("tokens_used", {}).get("player", 0) +
                 r.get("tokens_used", {}).get("coach", 0)
