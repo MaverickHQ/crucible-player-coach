@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+import streamlit as st
+
+from dashboard.state import init_session_state
+
+st.set_page_config(
+    page_title="Player-Coach",
+    page_icon="⚡",
+    layout="wide",
+)
+
+init_session_state()
+
+exchange = st.Page("dashboard/pages/01_exchange.py", title="Exchange", icon="🎯")
+constraints = st.Page("dashboard/pages/02_constraints.py", title="Constraints", icon="📋")
+history = st.Page("dashboard/pages/03_history.py", title="History", icon="📜")
+settings = st.Page("dashboard/pages/04_settings.py", title="Settings", icon="⚙️")
+
+pg = st.navigation([exchange, constraints, history, settings])
+
+st.sidebar.markdown("# Player-Coach")
+st.sidebar.caption("Adversarial trading decisions, round by round")
+st.sidebar.divider()
+
+pg.run()
