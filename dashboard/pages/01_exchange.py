@@ -195,7 +195,11 @@ elif run_clicked:
                 coach_bubble.show_text(coach_text)
 
             elif etype == "coach_done":
-                verdict = event.get("result", {}).get("verdict", "REJECT")
+                result = event.get("result", {})
+                verdict = result.get("verdict", "REJECT")
+                critique = result.get("critique", "")
+                if critique:
+                    coach_bubble.show_text(critique)
                 if verdict == "APPROVE":
                     _set_player("approving")
                     _set_coach("approving")
