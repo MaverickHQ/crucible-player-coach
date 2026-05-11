@@ -69,6 +69,72 @@ def _print_rounds(artifact: dict, output_dir: Path) -> None:
     print(f"Artifact: {output_dir / run_id}.json")
 
 
+def _scenario_4(loop: CoachLoop, store: DatabaseStore, output_dir: Path) -> None:
+    from player_coach.portfolio.state import PortfolioState
+
+    print("\n" + "=" * 50)
+    print("Scenario 4 — circuit breaker demo")
+    print("=" * 50 + "\n")
+
+    conservative_constraints = ConstraintSchema.from_dict(
+        json.loads(Path("examples/constraints/conservative.json").read_text())
+    )
+
+    portfolio_state = PortfolioState(
+        capital=9_780.0,
+        daily_starting_balance=10_000.0,
+        peak_capital=10_000.0,
+        cash_available=9_780.0,
+        daily_pnl=-220.0,
+    )
+
+    artifact = loop.run(
+        world_state=WORLD_STATE,
+        constraints=conservative_constraints,
+        portfolio_state=portfolio_state,
+        db_store=store,
+        strategy_id="demo-circuit-breaker",
+        output_dir=output_dir,
+    )
+    print(f"Outcome:            {artifact['outcome']}")
+    print(f"Termination reason: {artifact.get('termination_reason', 'n/a')}")
+
+
+def _scenario_5(loop: CoachLoop, store: DatabaseStore, output_dir: Path) -> None:
+    from player_coach.constraints.deriver import ConstraintDeriver
+
+    print("\n" + "=" * 50)
+    print("Scenario 5 — ConstraintDeriver from evidence")
+    print("=" * 50 + "\n")
+
+    evidence_policy = {
+        "runs": [
+            {"outcome": "success", "trade_size_pct": 0.03, "risk_reward": 2.0},
+            {"outcome": "success", "trade_size_pct": 0.04, "risk_reward": 2.5},
+            {"outcome": "failure", "trade_size_pct": 0.15, "risk_reward": 0.5},
+        ],
+        "patterns": [
+            {"symbol": "AMZN", "confidence": 0.85},
+            {"symbol": "MSFT", "confidence": 0.70},
+        ],
+    }
+
+    derived = ConstraintDeriver(evidence_policy).derive()
+    print(f"max_single_trade_pct: {derived.max_single_trade_pct:.0%}")
+    print(f"min_risk_reward:      {derived.min_risk_reward}x")
+    print(f"allowed_symbols:      {derived.allowed_symbols}")
+    print()
+
+    artifact = loop.run(
+        world_state=WORLD_STATE,
+        constraints=derived,
+        db_store=store,
+        strategy_id="demo-derived-constraints",
+        output_dir=output_dir,
+    )
+    print(f"Exchange outcome: {artifact['outcome']}")
+
+
 def main() -> None:
     DATA_DIR.mkdir(exist_ok=True)
     store = DatabaseStore(DATA_DIR / "player_coach.db")
@@ -162,6 +228,9 @@ def main() -> None:
     print(f"Final capital:    ${result.final_capital:,.2f}")
     print(f"Total P&L:        ${result.total_pnl:+,.2f} ({result.total_pnl_pct:+.2%})")
     print(f"Max drawdown:     {result.max_drawdown_pct:.2%}")
+
+    _scenario_4(loop, store, OUTPUT_DIR)
+    _scenario_5(loop, store, OUTPUT_DIR)
 
 
 if __name__ == "__main__":

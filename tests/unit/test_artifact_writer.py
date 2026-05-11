@@ -77,3 +77,39 @@ def test_approved_false_when_outcome_reject_max(writer: ArtifactWriter):
     )
     data = json.loads(path.read_text())
     assert data["approved"] is False
+
+
+def test_artifact_contains_termination_reason(writer: ArtifactWriter):
+    path = writer.write(
+        constraints=CONSTRAINTS,
+        world_state=WORLD_STATE,
+        rounds=ROUNDS,
+        outcome="ABORT",
+    )
+    data = json.loads(path.read_text())
+    assert data["termination_reason"] == "ABORT"
+
+
+def test_total_tokens_sums_correctly(writer: ArtifactWriter):
+    rounds_with_tokens = [
+        {
+            "round": 1,
+            "proposal": {"actions": [], "reasoning": "r1"},
+            "evaluation": {"decision": "REJECT", "violations": [], "feedback": ""},
+            "tokens_used": {"player": 100, "coach": 60},
+        },
+        {
+            "round": 2,
+            "proposal": {"actions": [], "reasoning": "r2"},
+            "evaluation": {"decision": "APPROVE", "violations": [], "feedback": ""},
+            "tokens_used": {"player": 80, "coach": 40},
+        },
+    ]
+    path = writer.write(
+        constraints=CONSTRAINTS,
+        world_state=WORLD_STATE,
+        rounds=rounds_with_tokens,
+        outcome="APPROVE",
+    )
+    data = json.loads(path.read_text())
+    assert data["total_tokens"] == 100 + 60 + 80 + 40
