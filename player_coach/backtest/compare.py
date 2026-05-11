@@ -41,8 +41,7 @@ def _avg_tokens(exchanges: list[dict]) -> float:
     totals = []
     for e in exchanges:
         total = sum(
-            r.get("tokens_used", {}).get("player", 0)
-            + r.get("tokens_used", {}).get("coach", 0)
+            r.get("player_tokens", 0) + r.get("coach_tokens", 0)
             for r in e.get("rounds", [])
         )
         totals.append(total)

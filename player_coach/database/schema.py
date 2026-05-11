@@ -57,4 +57,15 @@ CREATE TABLE IF NOT EXISTS coach_memory (
     confidence      REAL,
     created_at      TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_rounds_run_id
+    ON rounds(run_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_strategy
+    ON exchanges(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_outcome
+    ON exchanges(outcome);
+CREATE INDEX IF NOT EXISTS idx_snapshots_strategy
+    ON portfolio_snapshots(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_memory_strategy
+    ON coach_memory(strategy_id);
 """

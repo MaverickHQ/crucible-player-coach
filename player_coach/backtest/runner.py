@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json as _json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -186,9 +185,7 @@ class BacktestRunner:
                 "drawdown_pct": (peak_capital - capital) / peak_capital
                                 if peak_capital else 0.0,
                 "consistency_pct": 0.0,
-                "open_positions": _json.dumps(
-                    [p.position_id for p in open_positions]
-                ),
+                "open_positions": [p.position_id for p in open_positions],
             })
 
             if outcome == "ABORT" and termination_reason in (

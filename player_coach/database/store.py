@@ -17,6 +17,8 @@ class DatabaseStore:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
     # ------------------------------------------------------------------ writes
@@ -48,6 +50,10 @@ class DatabaseStore:
                     artifact.get("daily_pnl_at_time"),
                     datetime.now(timezone.utc).isoformat(),
                 ),
+            )
+            conn.execute(
+                "DELETE FROM rounds WHERE run_id = ?",
+                (artifact["run_id"],),
             )
             for r in rounds:
                 evaluation = r.get("evaluation", {})

@@ -10,7 +10,8 @@ def _make_exchange(outcome: str, rounds: int = 1, tokens_per_round: int = 80) ->
         "outcome": outcome,
         "rounds": [
             {
-                "tokens_used": {"player": tokens_per_round // 2, "coach": tokens_per_round // 2}
+                "player_tokens": tokens_per_round // 2,
+                "coach_tokens": tokens_per_round // 2,
             }
             for _ in range(rounds)
         ],

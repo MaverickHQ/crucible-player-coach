@@ -134,6 +134,11 @@ class CoachLoop:
         )
         artifact["symbol"] = world_state.get("symbol")
         artifact["strategy_id"] = strategy_id
+        artifact["daily_pnl_at_time"] = (
+            portfolio_state.daily_pnl if portfolio_state is not None else None
+        )
+
+        artifact_path.write_text(json.dumps(artifact, indent=2))
 
         if db_store is not None:
             db_store.save_exchange(artifact)
@@ -165,6 +170,12 @@ class CoachLoop:
         )
         artifact["strategy_id"] = strategy_id
         artifact["symbol"] = world_state.get("symbol")
+        artifact["daily_pnl_at_time"] = (
+            portfolio_state.daily_pnl if portfolio_state is not None else None
+        )
+
+        artifact_path.write_text(json.dumps(artifact, indent=2))
+
         if db_store is not None:
             db_store.save_exchange(artifact)
         return artifact

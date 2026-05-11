@@ -27,12 +27,17 @@ class PlayerAgent:
         history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         user_content = _build_user_prompt(world_state, constraints, history)
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=512,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-        )
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=512,
+                system=_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_content}],
+            )
+        except Exception as e:
+            raise RuntimeError(f"PlayerAgent API call failed: {e}") from e
+        if not response.content:
+            raise ValueError("PlayerAgent received empty response from API")
         text = response.content[0].text.strip()
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:

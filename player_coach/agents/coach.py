@@ -27,12 +27,17 @@ class CoachAgent:
         world_state: dict[str, Any],
     ) -> dict[str, Any]:
         user_content = _build_user_prompt(proposal, constraints, world_state)
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=256,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-        )
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=256,
+                system=_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_content}],
+            )
+        except Exception as e:
+            raise RuntimeError(f"CoachAgent API call failed: {e}") from e
+        if not response.content:
+            raise ValueError("CoachAgent received empty response from API")
         text = response.content[0].text.strip()
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
