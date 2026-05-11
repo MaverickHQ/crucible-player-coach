@@ -8,6 +8,7 @@ _BUBBLE_CSS = """
 <style>
 .speech-bubble {
     background: #FFFFFF;
+    color: #1A1A2E;
     border: 2.5px solid #1A1A2E;
     border-radius: 12px;
     padding: 10px 14px;
@@ -43,14 +44,8 @@ _BUBBLE_CSS = """
 </style>
 """
 
-_STYLE_INJECTED = False
-
-
 def _inject_style() -> None:
-    global _STYLE_INJECTED
-    if not _STYLE_INJECTED:
-        st.markdown(_BUBBLE_CSS, unsafe_allow_html=True)
-        _STYLE_INJECTED = True
+    st.markdown(_BUBBLE_CSS, unsafe_allow_html=True)
 
 
 def _render_html(text: str) -> str:
