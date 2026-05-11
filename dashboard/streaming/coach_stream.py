@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Generator
+
+import anthropic
+
+from player_coach.agents.coach import _SYSTEM_PROMPT, _build_user_prompt, _extract_json
+from player_coach.constraints.schema import ConstraintSchema
+
+
+def stream_coach_evaluation(
+    proposal: dict,
+    constraints: ConstraintSchema,
+    world_state: dict,
+    api_key: str,
+) -> Generator[str | dict, None, None]:
+    client = anthropic.Anthropic(api_key=api_key)
+    user_prompt = _build_user_prompt(proposal, constraints, world_state)
+
+    accumulated = ""
+    with client.messages.stream(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=256,
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+    ) as stream:
+        for chunk in stream.text_stream:
+            accumulated += chunk
+            yield chunk
+
+    extracted = _extract_json(accumulated)
+    try:
+        parsed = json.loads(extracted)
+    except json.JSONDecodeError:
+        parsed = {}
+    result = {
+        "verdict": parsed.get("verdict", "REJECT"),
+        "violations": parsed.get("violations", []),
+        "critique": parsed.get("critique", accumulated),
+    }
+    yield {"__done__": True, "result": result}
