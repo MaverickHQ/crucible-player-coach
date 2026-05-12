@@ -44,7 +44,7 @@ class CoachAgent:
         try:
             response = self._client.messages.create(
                 model=self._model,
-                max_tokens=256,
+                max_tokens=512,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_content}],
             )

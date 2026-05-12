@@ -21,7 +21,7 @@ def stream_coach_evaluation(
     accumulated = ""
     with client.messages.stream(
         model="claude-haiku-4-5-20251001",
-        max_tokens=256,
+        max_tokens=512,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
