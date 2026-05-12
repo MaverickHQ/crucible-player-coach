@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import streamlit as st
-import yfinance as _yf
 
 from dashboard.components.characters import COACH_SVGS, PLAYER_SVGS, render_character
 from dashboard.components.round_panel import render_round
@@ -54,18 +53,26 @@ _PRESETS: dict[str, dict] = {
 @st.cache_data(ttl=300)
 def _fetch_market_data(sym: str) -> dict:
     try:
-        hist = _yf.Ticker(sym).history(period="20d")
-        if hist.empty:
+        import yfinance as yf
+        import pandas as pd
+        raw = yf.download(sym, period="20d", auto_adjust=True, progress=False)
+        if raw.empty:
             return {}
-        closes = hist["Close"].tolist()
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = [c[0].lower() for c in raw.columns]
+        else:
+            raw.columns = [c.lower() for c in raw.columns]
+        closes = raw["close"].tolist()
         latest = closes[-1]
         sma5 = sum(closes[-5:]) / min(5, len(closes))
         sma10 = sum(closes[-10:]) / min(10, len(closes))
-        vol = int(hist["Volume"].iloc[-1])
-        return {"price": round(latest, 2),
-                "sma5": round(sma5, 2),
-                "sma10": round(sma10, 2),
-                "volume": vol}
+        vol = int(raw["volume"].iloc[-1])
+        return {
+            "price": round(float(latest), 2),
+            "sma5": round(float(sma5), 2),
+            "sma10": round(float(sma10), 2),
+            "volume": vol,
+        }
     except Exception:
         return {}
 
