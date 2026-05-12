@@ -154,7 +154,7 @@ with st.sidebar:
 # Page title + character area
 # ---------------------------------------------------------------------------
 
-st.title("Exchange")
+st.title("Trade Review")
 
 # Row 1 — Player left, bubble right
 p_img_col, p_bub_col = st.columns([1, 3])
@@ -260,8 +260,8 @@ elif run_clicked:
             db_store=get_store(),
         )
 
-        player_bubble = SpeechBubble(player_bubble_ph, side="right")
-        coach_bubble = SpeechBubble(coach_bubble_ph, side="left")
+        player_bubble = SpeechBubble(player_bubble_ph, side="left")
+        coach_bubble  = SpeechBubble(coach_bubble_ph,  side="right")
         completed_rounds: list[dict] = []
 
         for event in runner.run():
