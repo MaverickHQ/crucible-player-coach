@@ -25,11 +25,12 @@ def render_character(
     svgs: dict,
     state: str,
     label: str,
+    width: int = 120,
 ) -> None:
     images = _PLAYER_IMAGES if svgs is PLAYER_SVGS else _COACH_IMAGES
     path = images.get(state)
     if path and path.exists():
-        st.image(str(path), use_container_width=True)
+        st.image(str(path), width=width)
     else:
         st.markdown(
             f'<div style="height:200px;display:flex;'

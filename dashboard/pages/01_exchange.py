@@ -156,25 +156,29 @@ with st.sidebar:
 
 st.title("Exchange")
 
-player_col, coach_col = st.columns(2)
-
-with player_col:
+# Row 1 — Player left, bubble right
+p_img_col, p_bub_col = st.columns([1, 3])
+with p_img_col:
     player_char_ph = st.empty()
+with p_bub_col:
     player_bubble_ph = st.empty()
 
-with coach_col:
-    coach_char_ph = st.empty()
+# Row 2 — bubble left, Coach right
+c_bub_col, c_img_col = st.columns([3, 1])
+with c_bub_col:
     coach_bubble_ph = st.empty()
+with c_img_col:
+    coach_char_ph = st.empty()
 
 
 def _set_player(state: str) -> None:
     with player_char_ph.container():
-        render_character(PLAYER_SVGS, state, "PLAYER")
+        render_character(PLAYER_SVGS, state, "PLAYER", width=120)
 
 
 def _set_coach(state: str) -> None:
     with coach_char_ph.container():
-        render_character(COACH_SVGS, state, "COACH")
+        render_character(COACH_SVGS, state, "COACH", width=120)
 
 
 _set_player("confident")
@@ -256,8 +260,8 @@ elif run_clicked:
             db_store=get_store(),
         )
 
-        player_bubble = SpeechBubble(player_bubble_ph)
-        coach_bubble = SpeechBubble(coach_bubble_ph)
+        player_bubble = SpeechBubble(player_bubble_ph, side="right")
+        coach_bubble = SpeechBubble(coach_bubble_ph, side="left")
         completed_rounds: list[dict] = []
 
         for event in runner.run():
