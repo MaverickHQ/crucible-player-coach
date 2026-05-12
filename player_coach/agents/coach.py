@@ -81,7 +81,7 @@ class CoachAgent:
 _SYSTEM_PROMPT = """\
 You are a trading risk auditor. Check every proposed action against the constraints exactly.
 
-Respond with valid JSON only:
+Respond with valid JSON only — no markdown, no code fences, no explanation outside the JSON. Keep the critique field as a single line with no line breaks:
 {
   "verdict": "APPROVE" | "REJECT",
   "violations": ["<constraint_name>", ...],
