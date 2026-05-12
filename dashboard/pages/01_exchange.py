@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import streamlit as st
+import yfinance as _yf
 
 from dashboard.components.characters import COACH_SVGS, PLAYER_SVGS, render_character
 from dashboard.components.round_panel import render_round
@@ -50,13 +51,33 @@ _PRESETS: dict[str, dict] = {
 # Sidebar
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=300)
+def _fetch_market_data(sym: str) -> dict:
+    try:
+        hist = _yf.Ticker(sym).history(period="20d")
+        if hist.empty:
+            return {}
+        closes = hist["Close"].tolist()
+        latest = closes[-1]
+        sma5 = sum(closes[-5:]) / min(5, len(closes))
+        sma10 = sum(closes[-10:]) / min(10, len(closes))
+        vol = int(hist["Volume"].iloc[-1])
+        return {"price": round(latest, 2),
+                "sma5": round(sma5, 2),
+                "sma10": round(sma10, 2),
+                "volume": vol}
+    except Exception:
+        return {}
+
+
 with st.sidebar:
     st.header("Market Parameters")
     symbol = st.selectbox("Symbol", ["AMZN", "MSFT", "TSLA", "BTC-USD"])
-    price = st.number_input("Current Price ($)", value=185.0, min_value=0.01, step=1.0)
-    sma5 = st.number_input("SMA 5-day", value=183.0, step=1.0)
-    sma10 = st.number_input("SMA 10-day", value=180.0, step=1.0)
-    volume = st.number_input("Volume", value=45000000, step=100000)
+    mkt = _fetch_market_data(symbol)
+    price = st.number_input("Current Price ($)", value=mkt.get("price", 185.0), min_value=0.01, step=1.0)
+    sma5 = st.number_input("SMA 5-day", value=mkt.get("sma5", 183.0), step=1.0)
+    sma10 = st.number_input("SMA 10-day", value=mkt.get("sma10", 180.0), step=1.0)
+    volume = st.number_input("Volume", value=mkt.get("volume", 45000000), step=100000)
     session = st.selectbox("Session", ["NY_open", "NY_mid", "NY_close", "overnight"])
     volatility = st.selectbox("Volatility Regime", ["low", "medium", "high"])
 
@@ -104,6 +125,16 @@ _set_coach("stern")
 
 rounds_ph = st.empty()
 artifact_ph = st.empty()
+
+# ---------------------------------------------------------------------------
+# Clear stale rounds when symbol changes
+# ---------------------------------------------------------------------------
+
+if st.session_state.get("_last_symbol") != symbol:
+    st.session_state["_last_symbol"] = symbol
+    st.session_state["last_artifact"] = None
+    rounds_ph.empty()
+    artifact_ph.empty()
 
 # ---------------------------------------------------------------------------
 # Replay mode — pop before run logic so it clears on first render
@@ -167,39 +198,33 @@ elif run_clicked:
         player_bubble = SpeechBubble(player_bubble_ph)
         coach_bubble = SpeechBubble(coach_bubble_ph)
         completed_rounds: list[dict] = []
-        player_text = ""
-        coach_text = ""
 
         for event in runner.run():
             etype = event.get("type")
 
             if etype == "round_start":
-                player_text = ""
-                coach_text = ""
                 player_bubble.clear()
                 coach_bubble.clear()
                 _set_player("confident")
                 _set_coach("stern")
 
             elif etype == "player_token":
-                player_text += event.get("text", "")
-                player_bubble.show_text(player_text)
+                player_bubble.show_text("⏳ thinking...")
 
             elif etype == "player_done":
                 reasoning = event.get("result", {}).get("reasoning", "")
                 if reasoning:
-                    player_bubble.show_text(reasoning)
+                    player_bubble.stream_text(reasoning, delay=0.03)
 
             elif etype == "coach_token":
-                coach_text += event.get("text", "")
-                coach_bubble.show_text(coach_text)
+                coach_bubble.show_text("⏳ evaluating...")
 
             elif etype == "coach_done":
                 result = event.get("result", {})
                 verdict = result.get("verdict", "REJECT")
                 critique = result.get("critique", "")
                 if critique:
-                    coach_bubble.show_text(critique)
+                    coach_bubble.stream_text(critique, delay=0.03)
                 if verdict == "APPROVE":
                     _set_player("approving")
                     _set_coach("approving")
