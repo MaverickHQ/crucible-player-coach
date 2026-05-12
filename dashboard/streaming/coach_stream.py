@@ -21,7 +21,7 @@ def stream_coach_evaluation(
     accumulated = ""
     with client.messages.stream(
         model="claude-haiku-4-5-20251001",
-        max_tokens=512,
+        max_tokens=1024,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
@@ -29,7 +29,11 @@ def stream_coach_evaluation(
             accumulated += chunk
             yield chunk
 
-    extracted = _extract_json(accumulated)
+    import re as _pre_re
+    pre_cleaned = _pre_re.sub(
+        r"```(?:json)?\s*|\s*```", "", accumulated
+    ).strip()
+    extracted = _extract_json(pre_cleaned)
     try:
         parsed = json.loads(extracted)
     except json.JSONDecodeError:
