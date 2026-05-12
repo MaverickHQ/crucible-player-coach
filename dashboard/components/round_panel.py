@@ -31,6 +31,23 @@ _ACTION_COLS = [
 ]
 
 
+def _clean_feedback(text: str) -> str:
+    if not text:
+        return ""
+    if text.strip().startswith("{"):
+        import re
+        m = re.search(r'"critique"\s*:\s*"([^"]*)"', text)
+        if m:
+            return m.group(1)
+        import json as _j
+        try:
+            parsed = _j.loads(text)
+            return parsed.get("critique", text)
+        except Exception:
+            pass
+    return text
+
+
 def render_round(round_dict: dict, expanded: bool = True) -> None:
     n = round_dict.get("round", "?")
     evaluation = round_dict.get("evaluation", {})
@@ -66,7 +83,7 @@ def render_round(round_dict: dict, expanded: bool = True) -> None:
 
         if feedback:
             st.markdown("**Coach Feedback**")
-            st.markdown(feedback)
+            st.markdown(_clean_feedback(feedback))
 
         with st.expander("Player reasoning", expanded=False):
             st.markdown(reasoning or "_No reasoning provided._")
