@@ -34,18 +34,27 @@ _ACTION_COLS = [
 def _clean_feedback(text: str) -> str:
     if not text:
         return ""
-    if text.strip().startswith("{"):
-        import re
-        m = re.search(r'"critique"\s*:\s*"([^"]*)"', text)
-        if m:
-            return m.group(1)
-        import json as _j
+    import re, json as _j
+
+    # Strip code fences first
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+
+    # If it looks like JSON now, try to extract critique
+    if cleaned.startswith("{"):
         try:
-            parsed = _j.loads(text)
-            return parsed.get("critique", text)
+            parsed = _j.loads(cleaned)
+            return parsed.get("critique", "") or cleaned
         except Exception:
             pass
-    return text
+        # Regex fallback — handles multiline critique values
+        m = re.search(
+            r'"critique"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            cleaned,
+        )
+        if m:
+            return m.group(1).replace('\\"', '"')
+
+    return cleaned
 
 
 def render_round(round_dict: dict, expanded: bool = True) -> None:

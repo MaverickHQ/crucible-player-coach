@@ -34,11 +34,17 @@ def stream_coach_evaluation(
         parsed = json.loads(extracted)
     except json.JSONDecodeError:
         parsed = {}
+    import re as _re
     critique = parsed.get("critique", "")
     if not critique or "{" in str(critique):
-        import re as _re
-        m = _re.search(r'"critique"\s*:\s*"([^"]*)"', accumulated)
-        critique = m.group(1) if m else ""
+        cleaned_acc = _re.sub(
+            r"```(?:json)?\s*|\s*```", "", accumulated
+        ).strip()
+        m = _re.search(
+            r'"critique"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            cleaned_acc,
+        )
+        critique = m.group(1).replace('\\"', '"') if m else ""
     result = {
         "verdict": parsed.get("verdict", "REJECT"),
         "violations": parsed.get("violations", []),
