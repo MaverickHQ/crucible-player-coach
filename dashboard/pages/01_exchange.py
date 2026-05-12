@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import socket as _socket
+
 import streamlit as st
 
 from dashboard.components.characters import COACH_SVGS, PLAYER_SVGS, render_character
@@ -50,31 +52,83 @@ _PRESETS: dict[str, dict] = {
 # Sidebar
 # ---------------------------------------------------------------------------
 
+def _yfinance_available() -> bool:
+    try:
+        _socket.setdefaulttimeout(1)
+        _socket.socket(_socket.AF_INET,
+                       _socket.SOCK_STREAM).connect(
+            ("fc.yahoo.com", 443))
+        return True
+    except Exception:
+        return False
+
+_USE_YFINANCE = _yfinance_available()
+
+
 @st.cache_data(ttl=300)
 def _fetch_market_data(sym: str) -> dict:
-    try:
-        import yfinance as yf
-        import pandas as pd
-        raw = yf.download(sym, period="20d", auto_adjust=True, progress=False)
-        if raw.empty:
-            return {}
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = [c[0].lower() for c in raw.columns]
-        else:
-            raw.columns = [c.lower() for c in raw.columns]
-        closes = raw["close"].tolist()
-        latest = closes[-1]
-        sma5 = sum(closes[-5:]) / min(5, len(closes))
-        sma10 = sum(closes[-10:]) / min(10, len(closes))
-        vol = int(raw["volume"].iloc[-1])
-        return {
-            "price": round(float(latest), 2),
-            "sma5": round(float(sma5), 2),
-            "sma10": round(float(sma10), 2),
-            "volume": vol,
-        }
-    except Exception:
+    if _USE_YFINANCE:
+        try:
+            import yfinance as yf
+            import pandas as pd
+            raw = yf.download(
+                sym, period="20d",
+                auto_adjust=True, progress=False,
+            )
+            if not raw.empty:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = [c[0].lower()
+                                   for c in raw.columns]
+                else:
+                    raw.columns = [c.lower()
+                                   for c in raw.columns]
+                closes = raw["close"].tolist()
+                return {
+                    "price": round(float(closes[-1]), 2),
+                    "sma5": round(float(
+                        sum(closes[-5:]) /
+                        min(5, len(closes))), 2),
+                    "sma10": round(float(
+                        sum(closes[-10:]) /
+                        min(10, len(closes))), 2),
+                    "volume": int(raw["volume"].iloc[-1]),
+                }
+        except Exception:
+            pass
         return {}
+
+    # Local fallback: direct Yahoo Finance v8 API
+    try:
+        import requests
+        r = requests.get(
+            "https://query1.finance.yahoo.com"
+            f"/v8/finance/chart/{sym}",
+            params={"range": "20d", "interval": "1d"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            result = r.json()["chart"]["result"][0]
+            quotes = result["indicators"]["quote"][0]
+            closes = [c for c in quotes["close"]
+                      if c is not None]
+            volumes = [v for v in quotes["volume"]
+                       if v is not None]
+            if closes:
+                return {
+                    "price": round(float(closes[-1]), 2),
+                    "sma5": round(float(
+                        sum(closes[-5:]) /
+                        min(5, len(closes))), 2),
+                    "sma10": round(float(
+                        sum(closes[-10:]) /
+                        min(10, len(closes))), 2),
+                    "volume": int(volumes[-1])
+                              if volumes else 0,
+                }
+    except Exception:
+        pass
+    return {}
 
 
 with st.sidebar:
