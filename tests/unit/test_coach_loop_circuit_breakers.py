@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
@@ -118,14 +118,18 @@ def test_trading_cutoff_breach_returns_abort_with_no_rounds(tmp_path: Path) -> N
     constraints.trading_cutoff_time = "09:00"
     loop = _make_loop(tmp_path)
     store = DatabaseStore(tmp_path / "test.db")
-    artifact = loop.run(
-        world_state={"symbol": "AMZN", "price": 185.0},
-        constraints=constraints,
-        portfolio_state=_healthy_portfolio(),
-        db_store=store,
-        strategy_id="test-strategy",
-        output_dir=tmp_path,
-    )
+    with patch(
+        "player_coach.loop.coach_loop.is_trading_cutoff_reached",
+        return_value=True,
+    ):
+        artifact = loop.run(
+            world_state={"symbol": "AMZN", "price": 185.0},
+            constraints=constraints,
+            portfolio_state=_healthy_portfolio(),
+            db_store=store,
+            strategy_id="test-strategy",
+            output_dir=tmp_path,
+        )
     assert artifact["outcome"] == "ABORT"
     assert artifact["rounds"] == []
     assert artifact["termination_reason"] == "trading_cutoff"

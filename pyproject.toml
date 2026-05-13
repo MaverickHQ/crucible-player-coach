@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "player-coach-core"
-version = "0.1.0"
+version = "1.0.0"
 description = "Adversarial quality loop for trading decisions"
 requires-python = ">=3.10"
 dependencies = [

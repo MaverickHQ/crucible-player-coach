@@ -70,8 +70,9 @@ def _inject_style() -> None:
 
 
 def _render_html(text: str, side: str = "right") -> str:
+    import html as _html
     return (f'<div class="speech-bubble '
-            f'speech-bubble-{side}">{text}&nbsp;</div>')
+            f'speech-bubble-{side}">{_html.escape(text)}&nbsp;</div>')
 
 
 class SpeechBubble:
