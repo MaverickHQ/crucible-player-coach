@@ -1,47 +1,110 @@
-# player-coach
+# Crucible Player-Coach
 
-Adversarial quality loop for trading decisions.
-Part of the [Crucible](https://github.com/MaverickHQ) project.
-GitHub: [github.com/MaverickHQ/crucible-player-coach](https://github.com/MaverickHQ/crucible-player-coach)
+**An adversarial quality loop for trading decisions.**
+A CoachAgent challenges and refines a PlayerAgent's proposals
+before execution. Every proposal, rejection, revision, and
+approval is recorded as a structured artifact.
 
-## Project status
+Part of the [Crucible](https://github.com/MaverickHQ) project
+series — see also
+[crucible-ewm](https://github.com/MaverickHQ/crucible-ewm).
 
-**Current milestone: v1.0.0 — Full system complete**
+---
 
-**Backend:** PlayerAgent, CoachAgent, CoachLoop, circuit breakers, backtesting engine, SQLite persistence, ConstraintDeriver from ewm-core evidence policy.
+## How it works
 
-**Dashboard:** Four-page Streamlit app — Trade Review (streaming exchange with animated characters), Constraints (12-field configuration with presets), History (SQLite-backed replay), Settings (BYOK).
+The PlayerAgent proposes trading actions given the current
+market state. The CoachAgent evaluates every proposal
+against a formal constraint schema — mechanically, against
+numbers, not vaguely. If the proposal violates a constraint,
+the Coach rejects it with a specific critique. The Player
+revises and resubmits. This continues for up to three rounds.
 
-Phase 3 (player-coach) is complete. Backlog: AWS AgentCore deployment.
+The result is not just a trading decision. It is a structured
+artifact: every proposal, every rejection, every revision,
+every approval — recorded, validated, and queryable.
 
-## What this repository builds
-
-A CoachAgent challenges and refines a PlayerAgent's trading proposals before execution. Both agents use Claude Haiku via the Anthropic API. Every proposal, rejection, revision, and approval is recorded as a structured artifact.
-
-## Dashboard
-
-A four-page Streamlit dashboard for running and reviewing player-coach exchanges.
-
-**Trade Review** — Run a live exchange. Player and Coach characters animate with streaming speech bubbles. Round cards show proposals, verdicts, violations, and critique. Full artifact JSON viewer.
-
-**Constraints** — Configure the Coach's constraint schema. Load presets, adjust sliders, export JSON, or push directly to the Trade Review page.
-
-**History** — Browse past exchanges from SQLite. Filter by outcome. Select any row to inspect rounds and replay with animation.
-
-**Settings** — BYOK API key entry and validation. Key lives in session memory only, never stored.
-
-```bash
-pip install player-coach-core[dashboard]
-streamlit run dashboard/app.py
-```
+---
 
 ## Installation
 
 ```bash
-pip install player-coach-core          # core only
-pip install player-coach-core[llm]     # + Anthropic SDK
-pip install player-coach-core[dashboard]  # + Streamlit dashboard
+# Core infrastructure
+pip install player-coach-core
+
+# With LLM agents
+pip install player-coach-core[llm]
+
+# With Streamlit dashboard
+pip install player-coach-core[dashboard]
 ```
+
+Requires `ANTHROPIC_API_KEY` for LLM agents.
+
+---
+
+## Quick start
+
+```python
+from player_coach.agents.player import PlayerAgent
+from player_coach.agents.coach import CoachAgent
+from player_coach.artifacts.writer import ArtifactWriter
+from player_coach.constraints.schema import ConstraintSchema
+from player_coach.loop.coach_loop import CoachLoop
+import json
+from pathlib import Path
+
+constraints = ConstraintSchema.from_dict(
+    json.loads(Path("examples/constraints/moderate.json").read_text())
+)
+
+loop = CoachLoop(
+    player=PlayerAgent(),
+    coach=CoachAgent(),
+    artifact_writer=ArtifactWriter("artifacts"),
+)
+
+artifact = loop.run(
+    world_state={
+        "symbol": "AMZN", "price": 185.0,
+        "sma5": 183.0, "sma10": 180.0,
+        "volume": 45_000_000, "position": "flat",
+        "volatility_regime": "medium", "session": "NY_open",
+    },
+    constraints=constraints,
+)
+
+print(f"Outcome: {artifact['outcome']}")
+print(f"Rounds:  {artifact['rounds_taken']}")
+```
+
+---
+
+## Dashboard
+
+A four-page Streamlit app for running and reviewing
+player-coach exchanges.
+
+```bash
+streamlit run dashboard/app.py
+```
+
+**Trade Review** — Run a live exchange. Player and Coach
+characters animate with streaming speech bubbles. Round cards
+show proposals, verdicts, violations, and critique.
+
+**Constraints** — Configure the Coach's constraint schema.
+Load presets, adjust sliders, export JSON, or push directly
+to the Trade Review page.
+
+**History** — Browse past exchanges from SQLite. Filter by
+outcome. Select any row to inspect rounds and replay with
+animation.
+
+**Settings** — BYOK API key entry and validation. Key lives
+in session memory only, never stored.
+
+---
 
 ## Constraint schema
 
@@ -51,6 +114,9 @@ pip install player-coach-core[dashboard]  # + Streamlit dashboard
   "max_single_trade_pct": 0.05,
   "max_leverage": 1.5,
   "max_drawdown_pct": 0.10,
+  "max_daily_loss_pct": 0.02,
+  "consistency_rule_pct": 0.50,
+  "trading_cutoff_time": "16:20",
   "allowed_symbols": ["AMZN", "MSFT", "TSLA", "BTC-USD"],
   "max_open_positions": 3,
   "min_risk_reward": 1.5,
@@ -59,20 +125,62 @@ pip install player-coach-core[dashboard]  # + Streamlit dashboard
 }
 ```
 
+Five presets in `examples/constraints/`:
+`conservative`, `moderate`, `aggressive`,
+`strict`, `futures_compatible`.
+
+---
+
 ## Architecture
 
-| Component | Description |
+| Component | Role |
 |---|---|
-| `PlayerAgent` | Proposes actions given world state. Claude Haiku, max_tokens=512. |
-| `CoachAgent` | Evaluates proposals against constraint schema. Claude Haiku, max_tokens=1024. |
-| `CoachLoop` | Orchestrates the exchange. Up to 3 rounds. Writes structured artifact. |
-| `BacktestRunner` | Runs CoachLoop over historical trading days. |
-| `CircuitBreakers` | MLL, daily loss limit, consistency rule, trading cutoff. |
-| `DatabaseStore` | SQLite persistence for exchanges, rounds, and strategies. |
+| `PlayerAgent` | Proposes 1–3 actions given world state. Claude Haiku, max_tokens=512. |
+| `CoachAgent` | Evaluates proposals against constraint schema. max_tokens=1024. |
+| `CoachLoop` | Orchestrates exchange. Up to 3 rounds. Writes artifact to disk and SQLite. |
+| `circuit_breakers` | MLL, daily loss limit, consistency rule, trading cutoff — pure functions. |
+| `ConstraintDeriver` | Derives constraint schema from ewm-core evidence policy. |
+| `BacktestRunner` | Replays CoachLoop over historical trading days via yfinance. |
+| `DatabaseStore` | SQLite persistence for exchanges, rounds, strategies, portfolio snapshots. |
+
+---
+
+## Circuit breakers
+
+Four hard stops checked before every round, in priority order:
+
+1. **MLL breached** — peak drawdown exceeded, account terminated
+2. **Daily loss limit** — today's loss too large, skip today
+3. **Consistency rule** — today's gain exceeds fraction of cumulative, skip today
+4. **Trading cutoff** — market hours ended, skip today
+
+---
+
+## Related
+
+| Repo | What |
+|---|---|
+| [crucible-ewm](https://github.com/MaverickHQ/crucible-ewm) | Observable agent trajectories, evidence policy, ewm-core |
+| [beyond-tokens](https://github.com/MaverickHQ/beyond-tokens) | Constrained LLM planning on AWS Bedrock |
+
+---
 
 ## Essays
 
 | Essay | Description |
 |---|---|
 | Essay 8a — Theory (coming soon) | Adversarial quality in agent systems |
-| Essay 8b — Implementation (coming soon) | How player-coach works, GitHub link |
+| Essay 8b — Implementation (coming soon) | How player-coach works |
+
+Published on [Substack](https://harveygill.substack.com).
+
+---
+
+## Project status
+
+**v1.0.0 — complete.** Backend, dashboard, tests, and PyPI
+package all shipped.
+
+Backlog: AWS AgentCore deployment — PlayerAgent and
+CoachAgent as separate Lambda functions, Step Functions
+orchestration, artifacts to S3.
