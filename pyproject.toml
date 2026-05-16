@@ -4,8 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "player-coach-core"
-version = "1.0.0"
+version = "1.0.1"
 description = "Adversarial quality loop for trading decisions"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "ewm-core",
