@@ -1,0 +1,5 @@
+streamlit>=1.35
+anthropic>=0.40.0
+yfinance
+requests
+ewm-core
