@@ -110,9 +110,9 @@ in session memory only, never stored.
 
 ## Demo
 
-[Watch the demo](https://crucible-player-coach.streamlit.app)
+[![Player-Coach Demo](https://crucible-player-coach.streamlit.app/~/+/media/static/favicon.png)](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1)
 
-(Full video demo coming — link will be updated on release.)
+[▶ Watch the demo](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1) — full walkthrough of the Trade Review exchange, Constraints page, and History replay.
 
 ---
 
