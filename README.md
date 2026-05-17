@@ -85,6 +85,8 @@ print(f"Rounds:  {artifact['rounds_taken']}")
 A four-page Streamlit app for running and reviewing
 player-coach exchanges.
 
+Live demo: https://crucible-player-coach.streamlit.app
+
 ```bash
 streamlit run dashboard/app.py
 ```
@@ -103,6 +105,35 @@ animation.
 
 **Settings** — BYOK API key entry and validation. Key lives
 in session memory only, never stored.
+
+---
+
+## Demo
+
+[Watch the demo](https://crucible-player-coach.streamlit.app)
+
+(Full video demo coming — link will be updated on release.)
+
+---
+
+## API key and database
+
+**API key:** The dashboard uses a bring-your-own-key
+model. Enter your Anthropic API key in the Settings
+page. The key is stored in session memory only — it is
+never written to disk, logged, or shared between users.
+Each browser session is fully isolated.
+
+**Database:** All exchanges are written to a shared
+SQLite database on the Streamlit Cloud instance. The
+History page shows exchanges from all users of the
+live demo. For private use, run the dashboard locally:
+
+```bash
+git clone https://github.com/MaverickHQ/crucible-player-coach
+pip install player-coach-core[dashboard]
+streamlit run dashboard/app.py
+```
 
 ---
 
