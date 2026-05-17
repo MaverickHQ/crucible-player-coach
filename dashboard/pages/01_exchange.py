@@ -239,8 +239,13 @@ elif run_clicked:
     if not st.session_state.get("api_key_valid"):
         st.warning("Set your API key in Settings")
     else:
+        constraints_dict = st.session_state.get("constraint_profile")
+        if not constraints_dict:
+            constraints_dict = _PRESETS[preset]
+        else:
+            st.session_state["constraint_profile"] = None
         constraints = ConstraintSchema.from_dict(
-            {**_PRESETS[preset], "max_rounds": max_rounds}
+            {**constraints_dict, "max_rounds": max_rounds}
         )
         world_state = {
             "symbol": symbol,
@@ -312,6 +317,11 @@ elif run_clicked:
 
             elif etype == "circuit_breaker":
                 st.error(f"Circuit breaker triggered: {event.get('reason', 'unknown')}")
+                _set_player("deflated")
+                _set_coach("stern")
+
+            elif etype == "error":
+                st.error(f"Exchange failed: {event.get('message', 'unknown error')}")
                 _set_player("deflated")
                 _set_coach("stern")
 

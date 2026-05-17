@@ -69,9 +69,7 @@ st.divider()
 
 confirm = st.checkbox("I understand this is irreversible")
 if st.button("Clear all exchanges", disabled=not confirm, type="secondary"):
-    with store._connect() as conn:
-        conn.execute("DELETE FROM rounds")
-        conn.execute("DELETE FROM exchanges")
+    store.clear_exchanges()
     st.success("All exchanges and rounds deleted.")
     st.rerun()
 

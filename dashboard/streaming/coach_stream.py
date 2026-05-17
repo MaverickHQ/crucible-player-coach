@@ -28,6 +28,7 @@ def stream_coach_evaluation(
         for chunk in stream.text_stream:
             accumulated += chunk
             yield chunk
+        usage = stream.get_final_usage()
 
     import re as _pre_re
     pre_cleaned = _pre_re.sub(
@@ -48,9 +49,16 @@ def stream_coach_evaluation(
         )
         critique = m.group(1).replace('\\"', '"') if m else ""
 
+    verdict = parsed.get("verdict", "REJECT")
+    violations = parsed.get("violations", [])
+    if verdict != "APPROVE" and any(
+        v in constraints.abort_on_violations for v in violations
+    ):
+        verdict = "ABORT"
     result = {
-        "verdict": parsed.get("verdict", "REJECT"),
-        "violations": parsed.get("violations", []),
+        "verdict": verdict,
+        "violations": violations,
         "critique": critique,
     }
-    yield {"__done__": True, "result": result}
+    yield {"__done__": True, "result": result,
+           "tokens": usage.input_tokens + usage.output_tokens}

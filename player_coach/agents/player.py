@@ -137,7 +137,9 @@ def _build_user_prompt(
             parts.append(f"### Round {i}")
             if "proposal" in round_:
                 parts.append("**Proposal:**\n" + json.dumps(round_["proposal"], indent=2))
-            if "critique" in round_:
-                parts.append("**Coach critique:**\n" + json.dumps(round_["critique"], indent=2))
+            if "evaluation" in round_:
+                feedback = round_["evaluation"].get("feedback", "")
+                if feedback:
+                    parts.append("**Coach critique:**\n" + feedback)
     parts.append("Propose your trading actions now.")
     return "\n\n".join(parts)

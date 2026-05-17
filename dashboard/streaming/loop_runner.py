@@ -61,24 +61,33 @@ class DashboardRunner:
         for n in range(1, self._constraints.max_rounds + 1):
             yield {"type": "round_start", "round": n}
 
-            for event in stream_player_decision(
-                self._world_state, self._constraints, history, self._api_key
-            ):
-                if isinstance(event, dict) and event.get("__done__"):
-                    player_result = event["result"]
-                    yield {"type": "player_done", "result": player_result}
-                else:
-                    yield {"type": "player_token", "text": event}
+            player_tokens = 0
+            coach_tokens = 0
+            try:
+                for event in stream_player_decision(
+                    self._world_state, self._constraints, history, self._api_key
+                ):
+                    if isinstance(event, dict) and event.get("__done__"):
+                        player_result = event["result"]
+                        player_tokens = event.get("tokens", 0)
+                        yield {"type": "player_done", "result": player_result}
+                    else:
+                        yield {"type": "player_token", "text": event}
 
-            coach_result: dict = {}
-            for event in stream_coach_evaluation(
-                player_result, self._constraints, self._world_state, self._api_key
-            ):
-                if isinstance(event, dict) and event.get("__done__"):
-                    coach_result = event["result"]
-                    yield {"type": "coach_done", "result": coach_result}
-                else:
-                    yield {"type": "coach_token", "text": event}
+                coach_result: dict = {}
+                for event in stream_coach_evaluation(
+                    player_result, self._constraints, self._world_state, self._api_key
+                ):
+                    if isinstance(event, dict) and event.get("__done__"):
+                        coach_result = event["result"]
+                        coach_tokens = event.get("tokens", 0)
+                        yield {"type": "coach_done", "result": coach_result}
+                    else:
+                        yield {"type": "coach_token", "text": event}
+
+            except Exception as exc:
+                yield {"type": "error", "message": str(exc)}
+                return
 
             verdict = coach_result.get("verdict", "REJECT")
             round_dict = {
@@ -89,7 +98,7 @@ class DashboardRunner:
                     "violations": coach_result.get("violations", []),
                     "feedback": coach_result.get("critique", ""),
                 },
-                "tokens_used": {"player": 0, "coach": 0},
+                "tokens_used": {"player": player_tokens, "coach": coach_tokens},
             }
             rounds.append(round_dict)
             yield {"type": "round_end", "round": round_dict}

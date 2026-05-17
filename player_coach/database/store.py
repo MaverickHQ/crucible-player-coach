@@ -139,6 +139,11 @@ class DatabaseStore:
                 ),
             )
 
+    def clear_exchanges(self) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM rounds")
+            conn.execute("DELETE FROM exchanges")
+
     # ------------------------------------------------------------------ reads
 
     def get_exchange(self, run_id: str) -> dict[str, Any] | None:
