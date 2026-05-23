@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from player_coach.constraints.evidence_builder import build_evidence_policy
 from player_coach.constraints.schema import ConstraintSchema
 
 _DEFAULT_SYMBOLS = ["AMZN", "MSFT"]
@@ -39,6 +40,21 @@ class ConstraintDeriver:
     def from_policy_file(cls, path: str | Path) -> ConstraintDeriver:
         data = json.loads(Path(path).read_text())
         return cls(data)
+
+    @classmethod
+    def from_db(
+        cls,
+        store: "DatabaseStore",
+        strategy_id: str | None = None,
+    ) -> "ConstraintDeriver":
+        approved_runs = store.get_approved_runs(strategy_id)
+        patterns = store.get_patterns(strategy_id)
+        rounds_by_run: dict[str, list] = {
+            r["run_id"]: store.get_rounds(r["run_id"])
+            for r in approved_runs
+        }
+        policy = build_evidence_policy(approved_runs, patterns, rounds_by_run)
+        return cls(policy)
 
     # ---------------------------------------------------------------- helpers
 

@@ -6,6 +6,8 @@ from pathlib import Path
 import streamlit as st
 
 from dashboard.components.constraint_form import render_constraint_form
+from player_coach.constraints.deriver import ConstraintDeriver
+from dashboard.db import get_store
 
 # ---------------------------------------------------------------------------
 # Load presets from examples/constraints/
@@ -33,17 +35,48 @@ if not _PRESETS:
 # Page
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Derive from History
+# ---------------------------------------------------------------------------
+
 st.title("Constraints")
+
+with st.expander("Derive from History", expanded=False):
+    _store = get_store()
+    _strategies = _store.get_strategies()
+
+    if _strategies:
+        _strategy_options = {"All history (no strategy filter)": None} | {
+            s["name"] or s["strategy_id"]: s["strategy_id"] for s in _strategies
+        }
+    else:
+        _strategy_options = {"All history (no strategy filter)": None}
+
+    _selected_label = st.selectbox(
+        "Strategy", list(_strategy_options.keys()), key="derive_strategy"
+    )
+    _selected_sid = _strategy_options[_selected_label]
+
+    if st.button("Derive Constraints", key="derive_btn"):
+        _schema = ConstraintDeriver.from_db(_store, strategy_id=_selected_sid).derive()
+        _derived = _schema.to_dict()
+        st.session_state["_derived_constraints"] = _derived
+        st.success("Constraints derived from history — loaded below.")
+
+    if "_derived_constraints" in st.session_state:
+        st.info("Derived constraints are active. Switch presets to reset.")
 
 # Preset selector — drives form initial values
 selected_preset = st.selectbox("Load Preset", list(_PRESETS))
 
 # Seed initial values from preset; switching preset reseeds intentionally
-_seed_key = f"constraints_seed_{selected_preset}"
-if _seed_key not in st.session_state:
-    st.session_state[_seed_key] = _PRESETS[selected_preset]
-
-initial = st.session_state[_seed_key]
+if "_derived_constraints" in st.session_state:
+    initial = st.session_state["_derived_constraints"]
+else:
+    _seed_key = f"constraints_seed_{selected_preset}"
+    if _seed_key not in st.session_state:
+        st.session_state[_seed_key] = _PRESETS[selected_preset]
+    initial = st.session_state[_seed_key]
 
 st.divider()
 

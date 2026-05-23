@@ -188,3 +188,27 @@ class DatabaseStore:
                 (strategy_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_approved_runs(
+        self, strategy_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM exchanges WHERE approved = 1"
+        params: tuple = ()
+        if strategy_id is not None:
+            sql += " AND strategy_id = ?"
+            params = (strategy_id,)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_patterns(
+        self, strategy_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT symbol, confidence FROM coach_memory"
+        params: tuple = ()
+        if strategy_id is not None:
+            sql += " WHERE strategy_id = ?"
+            params = (strategy_id,)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
