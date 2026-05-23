@@ -189,6 +189,27 @@ class DatabaseStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_memory_patterns(
+        self,
+        symbol: str | None = None,
+        strategy_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if symbol is not None:
+            conditions.append("symbol = ?")
+            params.append(symbol)
+        if strategy_id is not None:
+            conditions.append("strategy_id = ?")
+            params.append(strategy_id)
+        sql = "SELECT * FROM coach_memory"
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY created_at"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def get_approved_runs(
         self, strategy_id: str | None = None
     ) -> list[dict[str, Any]]:

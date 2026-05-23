@@ -39,8 +39,9 @@ class PlayerAgent:
         world_state: dict[str, Any],
         constraints: ConstraintSchema,
         history: list[dict[str, Any]] | None = None,
+        patterns: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        user_content = _build_user_prompt(world_state, constraints, history)
+        user_content = _build_user_prompt(world_state, constraints, history, patterns)
         try:
             response = self._client.messages.create(
                 model=self._model,
@@ -104,6 +105,7 @@ def _build_user_prompt(
     world_state: dict[str, Any],
     constraints: ConstraintSchema,
     history: list[dict[str, Any]] | None,
+    patterns: list[dict[str, Any]] | None = None,
 ) -> str:
     parts: list[str] = []
     parts.append("## World state\n" + json.dumps(world_state, indent=2))
@@ -131,6 +133,14 @@ def _build_user_prompt(
         "## Constraints\n"
         + json.dumps(constraints.to_dict(), indent=2)
     )
+    if patterns:
+        lines = ["## Relevant patterns (from coach memory)"]
+        for p in patterns:
+            conf = p.get("weighted_confidence", p.get("confidence", 0))
+            lines.append(
+                f"- {p['pattern_type']} (confidence {conf:.2f}): {p.get('observation', '')}"
+            )
+        parts.append("\n".join(lines))
     if history:
         parts.append("## Prior rounds")
         for i, round_ in enumerate(history, 1):

@@ -13,6 +13,8 @@ from player_coach.loop.circuit_breakers import (
     is_trading_cutoff_reached,
     is_mll_breached,
 )
+from player_coach.patterns.pattern_reader import read_patterns
+from player_coach.patterns.pattern_writer import write_patterns
 
 if TYPE_CHECKING:
     from player_coach.portfolio.state import PortfolioState
@@ -79,6 +81,14 @@ class CoachLoop:
                     db_store, writer, output_dir,
                 )
 
+        patterns: list[dict[str, Any]] = []
+        if db_store is not None:
+            patterns = read_patterns(
+                db_store,
+                symbol=world_state.get("symbol"),
+                strategy_id=strategy_id,
+            )
+
         max_rounds = constraints.max_rounds
         rounds: list[dict[str, Any]] = []
         history: list[dict[str, Any]] = []
@@ -88,6 +98,7 @@ class CoachLoop:
                 world_state=world_state,
                 constraints=constraints,
                 history=history or None,
+                patterns=patterns or None,
             )
             proposal = {
                 "actions": player_result["actions"],
@@ -147,6 +158,7 @@ class CoachLoop:
 
         if db_store is not None:
             db_store.save_exchange(artifact)
+            write_patterns(artifact, db_store, strategy_id=strategy_id)
 
         return artifact
 
@@ -183,4 +195,5 @@ class CoachLoop:
 
         if db_store is not None:
             db_store.save_exchange(artifact)
+            write_patterns(artifact, db_store, strategy_id=strategy_id)
         return artifact
