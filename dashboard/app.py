@@ -19,8 +19,9 @@ exchange = st.Page("pages/01_exchange.py", title="Exchange", icon="🎯")
 constraints = st.Page("pages/02_constraints.py", title="Constraints", icon="📋")
 history = st.Page("pages/03_history.py", title="History", icon="📜")
 settings = st.Page("pages/04_settings.py", title="Settings", icon="⚙️")
+backtest = st.Page("pages/05_backtest.py", title="Backtest", icon="📊")
 
-pg = st.navigation([exchange, constraints, history, settings])
+pg = st.navigation([exchange, constraints, history, settings, backtest])
 
 st.sidebar.markdown("# Player-Coach")
 st.sidebar.caption("Adversarial trading decisions, round by round")

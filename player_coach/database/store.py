@@ -222,6 +222,56 @@ class DatabaseStore:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+    def save_backtest_result(self, result: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO backtest_results
+                    (preset_a, preset_b, symbol, start_date, end_date,
+                     approve_rate_a, approve_rate_b,
+                     avg_rounds_a, avg_rounds_b,
+                     days_aborted_a, days_aborted_b,
+                     total_return_a, total_return_b,
+                     max_drawdown_a, max_drawdown_b,
+                     created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    result.get("preset_a"),
+                    result.get("preset_b"),
+                    result.get("symbol"),
+                    result.get("start_date"),
+                    result.get("end_date"),
+                    result.get("approve_rate_a"),
+                    result.get("approve_rate_b"),
+                    result.get("avg_rounds_a"),
+                    result.get("avg_rounds_b"),
+                    result.get("days_aborted_a"),
+                    result.get("days_aborted_b"),
+                    result.get("total_return_a"),
+                    result.get("total_return_b"),
+                    result.get("max_drawdown_a"),
+                    result.get("max_drawdown_b"),
+                    result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                ),
+            )
+
+    def get_backtest_results(
+        self,
+        symbol: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM backtest_results"
+        params: list[Any] = []
+        if symbol is not None:
+            sql += " WHERE symbol = ?"
+            params.append(symbol)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def get_patterns(
         self, strategy_id: str | None = None
     ) -> list[dict[str, Any]]:

@@ -68,4 +68,27 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_strategy
     ON portfolio_snapshots(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_memory_strategy
     ON coach_memory(strategy_id);
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    preset_a        TEXT,
+    preset_b        TEXT,
+    symbol          TEXT,
+    start_date      TEXT,
+    end_date        TEXT,
+    approve_rate_a  REAL,
+    approve_rate_b  REAL,
+    avg_rounds_a    REAL,
+    avg_rounds_b    REAL,
+    days_aborted_a  INTEGER,
+    days_aborted_b  INTEGER,
+    total_return_a  REAL,
+    total_return_b  REAL,
+    max_drawdown_a  REAL,
+    max_drawdown_b  REAL,
+    created_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_symbol
+    ON backtest_results(symbol);
 """
