@@ -1,28 +1,14 @@
-# Crucible Player-Coach
+# Crucible — Player-Coach
 
-**An adversarial quality loop for trading decisions.**
-A CoachAgent challenges and refines a PlayerAgent's proposals
-before execution. Every proposal, rejection, revision, and
-approval is recorded as a structured artifact.
+**An adversarial quality loop for LLM-based trading decisions.**
 
-Part of the [Crucible](https://github.com/MaverickHQ) project
-series — see also
-[crucible-ewm](https://github.com/MaverickHQ/crucible-ewm).
+![Player-Coach Demo](docs/demo.gif)
+
+[▶ Live dashboard](https://crucible-player-coach.streamlit.app) · [▶ Watch the demo](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1) · [PyPI](https://pypi.org/project/player-coach-core/)
 
 ---
 
-## How it works
-
-The PlayerAgent proposes trading actions given the current
-market state. The CoachAgent evaluates every proposal
-against a formal constraint schema — mechanically, against
-numbers, not vaguely. If the proposal violates a constraint,
-the Coach rejects it with a specific critique. The Player
-revises and resubmits. This continues for up to three rounds.
-
-The result is not just a trading decision. It is a structured
-artifact: every proposal, every rejection, every revision,
-every approval — recorded, validated, and queryable.
+A PlayerAgent proposes trading actions; a CoachAgent evaluates every proposal mechanically against a formal constraint schema and rejects with a specific critique if any constraint is violated. The Player revises and resubmits for up to three rounds. The result is a structured artifact — every proposal, rejection, revision, and approval recorded, validated, and queryable.
 
 ---
 
@@ -43,46 +29,9 @@ Requires `ANTHROPIC_API_KEY` for LLM agents.
 
 ---
 
-## Quick start
-
-```python
-from player_coach.agents.player import PlayerAgent
-from player_coach.agents.coach import CoachAgent
-from player_coach.artifacts.writer import ArtifactWriter
-from player_coach.constraints.schema import ConstraintSchema
-from player_coach.loop.coach_loop import CoachLoop
-import json
-from pathlib import Path
-
-constraints = ConstraintSchema.from_dict(
-    json.loads(Path("examples/constraints/moderate.json").read_text())
-)
-
-loop = CoachLoop(
-    player=PlayerAgent(),
-    coach=CoachAgent(),
-    artifact_writer=ArtifactWriter("artifacts"),
-)
-
-artifact = loop.run(
-    world_state={
-        "symbol": "AMZN", "price": 185.0,
-        "sma5": 183.0, "sma10": 180.0,
-        "volume": 45_000_000, "position": "flat",
-        "volatility_regime": "medium", "session": "NY_open",
-    },
-    constraints=constraints,
-)
-
-print(f"Outcome: {artifact['outcome']}")
-print(f"Rounds:  {artifact['rounds_taken']}")
-```
-
----
-
 ## Dashboard
 
-A four-page Streamlit app for running and reviewing
+A five-page Streamlit app for running and reviewing
 player-coach exchanges.
 
 Live demo: https://crucible-player-coach.streamlit.app
@@ -106,13 +55,9 @@ animation.
 **Settings** — BYOK API key entry and validation. Key lives
 in session memory only, never stored.
 
----
-
-## Demo
-
-[![Player-Coach Demo](https://crucible-player-coach.streamlit.app/~/+/media/static/favicon.png)](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1)
-
-[▶ Watch the demo](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1) — full walkthrough of the Trade Review exchange, Constraints page, and History replay.
+**Backtest** — Compare two constraint presets over historical
+data side by side. Approval rate, average rounds, days aborted,
+total return, and max drawdown with winner highlighted per metric.
 
 ---
 
@@ -162,11 +107,71 @@ Five presets in `examples/constraints/`:
 
 ---
 
+## Running locally
+
+```python
+from player_coach.agents.player import PlayerAgent
+from player_coach.agents.coach import CoachAgent
+from player_coach.artifacts.writer import ArtifactWriter
+from player_coach.constraints.schema import ConstraintSchema
+from player_coach.loop.coach_loop import CoachLoop
+import json
+from pathlib import Path
+
+constraints = ConstraintSchema.from_dict(
+    json.loads(Path("examples/constraints/moderate.json").read_text())
+)
+
+loop = CoachLoop(
+    player=PlayerAgent(),
+    coach=CoachAgent(),
+    artifact_writer=ArtifactWriter("artifacts"),
+)
+
+artifact = loop.run(
+    world_state={
+        "symbol": "AMZN", "price": 185.0,
+        "sma5": 183.0, "sma10": 180.0,
+        "volume": 45_000_000, "position": "flat",
+        "volatility_regime": "medium", "session": "NY_open",
+    },
+    constraints=constraints,
+)
+
+print(f"Outcome: {artifact['outcome']}")
+print(f"Rounds:  {artifact['rounds_taken']}")
+```
+
+---
+
+## Essays
+
+Each essay is paired with a working implementation.
+
+| # | Title | Link |
+|---|---|---|
+| 8 | The Adversarial Quality Loop | [Read →](https://harveygill.substack.com/p/the-adversarial-quality-loop) |
+| 9 | Building the Player-Coach Loop | [Read →](https://harveygill.substack.com/p/building-the-player-coach-loop) |
+| 10 | Closing the Evidence Loop | Coming soon |
+| 11 | The Quality of Reasoning | Coming soon |
+
+Part of the [Executable World Models](https://harveygill.substack.com) series on harveygill.substack.com.
+
+---
+
+## Demo
+
+![Player-Coach Demo](docs/demo.gif)
+
+[▶ Full demo video](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1)
+
+---
+
 ## Architecture
 
 | Component | Role |
 |---|---|
-| `PlayerAgent` | Proposes 1–3 actions given world state. Claude Haiku, max_tokens=512. |
+| `PlayerAgent` | Proposes 1–3 actions given world state. Claude Haiku, max_tokens=1024. |
 | `CoachAgent` | Evaluates proposals against constraint schema. max_tokens=1024. |
 | `CoachLoop` | Orchestrates exchange. Up to 3 rounds. Writes artifact to disk and SQLite. |
 | `circuit_breakers` | MLL, daily loss limit, consistency rule, trading cutoff — pure functions. |
@@ -196,20 +201,9 @@ Four hard stops checked before every round, in priority order:
 
 ---
 
-## Essays
-
-| Essay | Description |
-|---|---|
-| Essay 8a — Theory (coming soon) | Adversarial quality in agent systems |
-| Essay 8b — Implementation (coming soon) | How player-coach works |
-
-Published on [Substack](https://harveygill.substack.com).
-
----
-
 ## Project status
 
-**v1.0.0 — complete.** Backend, dashboard, tests, and PyPI
+**v1.1.0 — complete.** Backend, dashboard, tests, and PyPI
 package all shipped.
 
 Backlog: AWS AgentCore deployment — PlayerAgent and
