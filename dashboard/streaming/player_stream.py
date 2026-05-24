@@ -29,12 +29,15 @@ def stream_player_decision(
         for chunk in stream.text_stream:
             accumulated += chunk
             yield chunk
-        usage = stream.get_final_usage()
+        try:
+            usage = stream.get_final_usage()
+            tokens = usage.input_tokens + usage.output_tokens
+        except AttributeError:
+            tokens = 0
 
     extracted = _extract_json(accumulated)
     try:
         result = json.loads(extracted)
     except json.JSONDecodeError:
         result = {"actions": [], "reasoning": accumulated}
-    yield {"__done__": True, "result": result,
-           "tokens": usage.input_tokens + usage.output_tokens}
+    yield {"__done__": True, "result": result, "tokens": tokens}

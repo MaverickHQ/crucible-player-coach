@@ -28,7 +28,11 @@ def stream_coach_evaluation(
         for chunk in stream.text_stream:
             accumulated += chunk
             yield chunk
-        usage = stream.get_final_usage()
+        try:
+            usage = stream.get_final_usage()
+            tokens = usage.input_tokens + usage.output_tokens
+        except AttributeError:
+            tokens = 0
 
     import re as _pre_re
     pre_cleaned = _pre_re.sub(
@@ -60,5 +64,4 @@ def stream_coach_evaluation(
         "violations": violations,
         "critique": critique,
     }
-    yield {"__done__": True, "result": result,
-           "tokens": usage.input_tokens + usage.output_tokens}
+    yield {"__done__": True, "result": result, "tokens": tokens}
