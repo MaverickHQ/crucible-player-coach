@@ -13,6 +13,21 @@ class DatabaseStore:
         self._db_path = str(db_path)
         with self._connect() as conn:
             conn.executescript(SCHEMA_SQL)
+        self._migrate_rounds()
+
+    def _migrate_rounds(self) -> None:
+        new_columns = [
+            ("reasoning_score", "REAL"),
+            ("reasoning_critique", "TEXT"),
+        ]
+        with self._connect() as conn:
+            for col, col_type in new_columns:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE rounds ADD COLUMN {col} {col_type}"
+                    )
+                except sqlite3.OperationalError:
+                    pass  # column already exists
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -63,8 +78,9 @@ class DatabaseStore:
                     """
                     INSERT INTO rounds
                         (run_id, round_number, proposal, verdict,
-                         violations, critique, player_tokens, coach_tokens)
-                    VALUES (?,?,?,?,?,?,?,?)
+                         violations, critique, player_tokens, coach_tokens,
+                         reasoning_score, reasoning_critique)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         artifact["run_id"],
@@ -75,6 +91,8 @@ class DatabaseStore:
                         evaluation.get("feedback"),
                         tokens.get("player"),
                         tokens.get("coach"),
+                        r.get("reasoning_score"),
+                        r.get("reasoning_critique"),
                     ),
                 )
 

@@ -7,6 +7,7 @@ from player_coach.agents.coach import CoachAgent
 from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
+from player_coach.evaluators.reasoning_evaluator import ReasoningEvaluator
 from player_coach.loop.circuit_breakers import (
     is_daily_loss_limit_breached,
     is_consistency_rule_breached,
@@ -27,10 +28,12 @@ class CoachLoop:
         player: PlayerAgent,
         coach: CoachAgent,
         artifact_writer: ArtifactWriter,
+        reasoning_evaluator: ReasoningEvaluator | None = None,
     ) -> None:
         self._player = player
         self._coach = coach
         self._writer = artifact_writer
+        self._reasoning_evaluator = reasoning_evaluator
 
     def run(
         self,
@@ -112,6 +115,14 @@ class CoachLoop:
             )
             verdict = coach_result["verdict"]
 
+            reasoning_result: dict = {}
+            if self._reasoning_evaluator is not None:
+                reasoning_result = self._reasoning_evaluator.evaluate(
+                    reasoning=player_result.get("reasoning", ""),
+                    actions=player_result.get("actions", []),
+                    world_state=world_state,
+                )
+
             rounds.append({
                 "round": round_num,
                 "proposal": proposal,
@@ -124,6 +135,8 @@ class CoachLoop:
                     "player": player_result["tokens_used"]["player"],
                     "coach": coach_result["tokens_used"]["coach"],
                 },
+                "reasoning_score": reasoning_result.get("reasoning_score"),
+                "reasoning_critique": reasoning_result.get("reasoning_critique"),
             })
             history.append({
                 "proposal": proposal,

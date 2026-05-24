@@ -16,6 +16,7 @@ from player_coach.portfolio.state import PortfolioState
 
 from dashboard.streaming.coach_stream import stream_coach_evaluation
 from dashboard.streaming.player_stream import stream_player_decision
+from player_coach.evaluators.reasoning_evaluator import ReasoningEvaluator
 
 
 class DashboardRunner:
@@ -34,6 +35,12 @@ class DashboardRunner:
         self._api_key = api_key
         self._db_store = db_store
         self._strategy_id = strategy_id
+        try:
+            self._reasoning_evaluator: ReasoningEvaluator | None = ReasoningEvaluator(
+                api_key=api_key
+            )
+        except ImportError:
+            self._reasoning_evaluator = None
 
     def run(self) -> Generator[dict, None, None]:
         if self._portfolio_state is not None:
@@ -90,6 +97,26 @@ class DashboardRunner:
                 return
 
             verdict = coach_result.get("verdict", "REJECT")
+
+            reasoning_result: dict = {}
+            if self._reasoning_evaluator is not None:
+                try:
+                    reasoning_result = self._reasoning_evaluator.evaluate(
+                        reasoning=player_result.get("reasoning", ""),
+                        actions=player_result.get("actions", []),
+                        world_state=self._world_state,
+                    )
+                except Exception:
+                    reasoning_result = {
+                        "reasoning_score": None,
+                        "reasoning_critique": "evaluation unavailable",
+                    }
+            yield {
+                "type": "reasoning_done",
+                "score": reasoning_result.get("reasoning_score"),
+                "critique": reasoning_result.get("reasoning_critique"),
+            }
+
             round_dict = {
                 "round": n,
                 "proposal": player_result,
@@ -99,6 +126,8 @@ class DashboardRunner:
                     "feedback": coach_result.get("critique", ""),
                 },
                 "tokens_used": {"player": player_tokens, "coach": coach_tokens},
+                "reasoning_score": reasoning_result.get("reasoning_score"),
+                "reasoning_critique": reasoning_result.get("reasoning_critique"),
             }
             rounds.append(round_dict)
             yield {"type": "round_end", "round": round_dict}

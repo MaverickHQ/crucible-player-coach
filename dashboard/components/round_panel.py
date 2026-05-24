@@ -57,6 +57,23 @@ def _clean_feedback(text: str) -> str:
     return cleaned
 
 
+def _reasoning_badge(score: float | None) -> str:
+    if score is None:
+        return ""
+    if score >= 0.7:
+        color = "#27AE60"
+    elif score >= 0.4:
+        color = "#F39C12"
+    else:
+        color = "#E74C3C"
+    style = (
+        f"background:{color};color:white;padding:2px 8px;"
+        "border-radius:4px;font-size:0.75rem;font-weight:700"
+    )
+    label = f"reasoning {score:.2f}"
+    return f'<span style="{style}">{label}</span>'
+
+
 def render_round(round_dict: dict, expanded: bool = True) -> None:
     n = round_dict.get("round", "?")
     evaluation = round_dict.get("evaluation", {})
@@ -66,12 +83,16 @@ def render_round(round_dict: dict, expanded: bool = True) -> None:
     proposal = round_dict.get("proposal", {})
     actions = proposal.get("actions", [])
     reasoning = proposal.get("reasoning", "")
+    reasoning_score = round_dict.get("reasoning_score")
+    reasoning_critique = round_dict.get("reasoning_critique")
 
     badge_style = _BADGE.get(verdict, _BADGE_DEFAULT)
+    r_badge = _reasoning_badge(reasoning_score)
 
     with st.expander(f"Round {n} — {verdict}", expanded=expanded):
         st.markdown(
-            f'**Round {n}** &nbsp; <span style="{badge_style}">{verdict}</span>',
+            f'**Round {n}** &nbsp; <span style="{badge_style}">{verdict}</span>'
+            + (f" &nbsp; {r_badge}" if r_badge else ""),
             unsafe_allow_html=True,
         )
 
@@ -93,6 +114,13 @@ def render_round(round_dict: dict, expanded: bool = True) -> None:
         if feedback:
             st.markdown("**Coach Feedback**")
             st.markdown(_clean_feedback(feedback))
+
+        if reasoning_critique and reasoning_score is not None:
+            st.markdown("**Reasoning Quality**")
+            st.markdown(
+                f"{r_badge} &nbsp; {reasoning_critique}",
+                unsafe_allow_html=True,
+            )
 
         with st.expander("Player reasoning", expanded=False):
             st.markdown(reasoning or "_No reasoning provided._")

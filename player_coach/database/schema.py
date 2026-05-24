@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS rounds (
     violations      TEXT,
     critique        TEXT,
     player_tokens   INTEGER,
-    coach_tokens    INTEGER
+    coach_tokens    INTEGER,
+    reasoning_score REAL,
+    reasoning_critique TEXT
 );
 
 CREATE TABLE IF NOT EXISTS strategies (
