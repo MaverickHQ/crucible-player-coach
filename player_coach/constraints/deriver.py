@@ -1,10 +1,13 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from player_coach.constraints.evidence_builder import build_evidence_policy
 from player_coach.constraints.schema import ConstraintSchema
+
+if TYPE_CHECKING:
+    from player_coach.database.store import DatabaseStore
 
 _DEFAULT_SYMBOLS = ["AMZN", "MSFT"]
 

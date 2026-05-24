@@ -60,6 +60,10 @@ def _extract_risk_reward(proposal: dict[str, Any]) -> float | None:
     entry, stop, target = a.get("entry_price"), a.get("stop_loss"), a.get("take_profit")
     if None in (entry, stop, target):
         return None
+    try:
+        entry, stop, target = float(entry), float(stop), float(target)
+    except (TypeError, ValueError):
+        return None
     risk = abs(entry - stop)
     if risk == 0:
         return None

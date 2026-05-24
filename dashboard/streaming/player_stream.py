@@ -14,9 +14,10 @@ def stream_player_decision(
     constraints: ConstraintSchema,
     history: list[dict] | None,
     api_key: str,
+    patterns: list[dict] | None = None,
 ) -> Generator[str | dict, None, None]:
     client = anthropic.Anthropic(api_key=api_key)
-    user_prompt = _build_user_prompt(world_state, constraints, history)
+    user_prompt = _build_user_prompt(world_state, constraints, history, patterns)
 
     accumulated = ""
     with client.messages.stream(

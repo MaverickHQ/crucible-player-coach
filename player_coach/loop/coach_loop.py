@@ -140,7 +140,7 @@ class CoachLoop:
             })
             history.append({
                 "proposal": proposal,
-                "critique": coach_result["critique"],
+                "evaluation": {"feedback": coach_result.get("critique", "")},
             })
 
             if verdict in ("APPROVE", "ABORT"):
