@@ -5,7 +5,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from dashboard.components.constraint_form import render_constraint_form
+from dashboard.components.constraint_form import (
+    render_constraint_form,
+    _SYMBOLS,
+    _VIOLATION_FIELDS,
+)
 from player_coach.constraints.deriver import ConstraintDeriver
 from dashboard.db import get_store
 
@@ -61,6 +65,22 @@ with st.expander("Derive from History", expanded=False):
         _schema = ConstraintDeriver.from_db(_store, strategy_id=_selected_sid).derive()
         _derived = _schema.to_dict()
         st.session_state["_derived_constraints"] = _derived
+        st.session_state["cp_max_position_pct"] = float(_derived.get("max_position_pct", 0.15))
+        st.session_state["cp_max_single_trade_pct"] = float(_derived.get("max_single_trade_pct", 0.05))
+        st.session_state["cp_max_leverage"] = float(_derived.get("max_leverage", 1.5))
+        st.session_state["cp_max_drawdown_pct"] = float(_derived.get("max_drawdown_pct", 0.10))
+        st.session_state["cp_min_risk_reward"] = float(_derived.get("min_risk_reward", 1.5))
+        st.session_state["cp_max_daily_loss_pct"] = float(_derived.get("max_daily_loss_pct", 0.02))
+        st.session_state["cp_consistency_rule_pct"] = float(_derived.get("consistency_rule_pct", 0.30))
+        st.session_state["cp_max_open_positions"] = int(_derived.get("max_open_positions", 3))
+        st.session_state["cp_max_rounds"] = int(_derived.get("max_rounds", 3))
+        st.session_state["cp_trading_cutoff_time"] = str(_derived.get("trading_cutoff_time", "16:00"))
+        st.session_state["cp_allowed_symbols"] = [
+            s for s in _derived.get("allowed_symbols", []) if s in _SYMBOLS
+        ]
+        st.session_state["cp_abort_on_violations"] = [
+            v for v in _derived.get("abort_on_violations", []) if v in _VIOLATION_FIELDS
+        ]
         st.success("Constraints derived from history — loaded below.")
 
     if "_derived_constraints" in st.session_state:

@@ -99,6 +99,8 @@ def _db_round_to_artifact_round(r: dict) -> dict:
             "player": r.get("player_tokens", 0),
             "coach": r.get("coach_tokens", 0),
         },
+        "reasoning_score": r.get("reasoning_score"),
+        "reasoning_critique": r.get("reasoning_critique"),
     }
 
 # ---------------------------------------------------------------------------
