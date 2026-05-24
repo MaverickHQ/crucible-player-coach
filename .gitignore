@@ -22,3 +22,8 @@ outputs/
 .idea/
 .vscode/
 
+# Local data
+*.db
+data/
+CLAUDE.md
+
