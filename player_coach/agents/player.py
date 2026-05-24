@@ -1,12 +1,14 @@
 from __future__ import annotations
 import json
 import os
+import re
 from typing import Any
 
 from player_coach.constraints.schema import ConstraintSchema
 
 
 def _extract_json(text: str) -> str:
+    text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
     depth = 0
     start = None
     for i, ch in enumerate(text):
@@ -18,7 +20,11 @@ def _extract_json(text: str) -> str:
             depth -= 1
             if depth == 0 and start is not None:
                 return text[start : i + 1]
-    return text
+    try:
+        json.loads(text)
+        return text
+    except (json.JSONDecodeError, ValueError):
+        return text
 
 
 class PlayerAgent:
@@ -72,7 +78,8 @@ _SYSTEM_PROMPT = """\
 You are a trading planner. Given the current market state and risk constraints, \
 propose 1-3 trading actions.
 
-Respond with valid JSON only — no markdown, no explanation outside the JSON:
+Respond ONLY with a single JSON object. No text before or after the JSON. No markdown.
+Keep reasoning to 3-4 sentences. State your final calculation once — do not show multiple attempts.
 {
   "actions": [
     {
