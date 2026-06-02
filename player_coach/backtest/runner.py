@@ -6,6 +6,18 @@ from typing import TYPE_CHECKING, Any
 
 import yfinance as yf
 
+from player_coach.constraints.resolver import (
+    ConstraintResolver,
+    garch_scale,
+    regime_overlay,
+)
+from player_coach.market import (
+    GARCHFeature,
+    OHLCVBuffer,
+    RegimeFeature,
+    WorldState,
+    WorldStateEnricher,
+)
 from player_coach.portfolio.state import PortfolioState
 
 if TYPE_CHECKING:
@@ -63,10 +75,20 @@ class BacktestRunner:
         loop: CoachLoop,
         db_store: DatabaseStore,
         strategy_id: str,
+        enricher: WorldStateEnricher | None = None,
+        resolver: ConstraintResolver | None = None,
     ) -> None:
         self._loop = loop
         self._db_store = db_store
         self._strategy_id = strategy_id
+        # F6 regime + F7 GARCH enrich world state; the resolver then layers the
+        # regime overlay and (on top) garch volatility-scaling onto constraints.
+        self._enricher = enricher or WorldStateEnricher(
+            [RegimeFeature(), GARCHFeature()]
+        )
+        self._resolver = resolver or ConstraintResolver(
+            [regime_overlay(), garch_scale()]
+        )
 
     def run(
         self,
@@ -91,6 +113,7 @@ class BacktestRunner:
         days_aborted = 0
         exchanges: list[dict] = []
         close_prices: list[float] = []
+        buffer = OHLCVBuffer()
 
         for date, row in df.iterrows():
             close = float(row["Close"])
@@ -98,6 +121,13 @@ class BacktestRunner:
             low = float(row["Low"])
             volume = int(row["Volume"])
             close_prices.append(close)
+            buffer.append(
+                open=float(row["Open"]),
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+            )
 
             daily_pnl = sum(
                 (close - p.prev_close) / p.prev_close * p.cost if p.prev_close else 0.0
@@ -113,19 +143,23 @@ class BacktestRunner:
                 cumulative_pnl=cumulative_pnl,
             )
 
-            world_state: dict[str, Any] = {
-                "symbol": symbol,
-                "price": close,
-                "sma5": _compute_sma(close_prices, 5),
-                "sma10": _compute_sma(close_prices, 10),
-                "volume": volume,
-                "volatility_regime": _volatility_regime(high, low, close),
-                "session": "NY_open",
-            }
+            world_state_obj = WorldState(
+                symbol=symbol,
+                price=close,
+                sma5=_compute_sma(close_prices, 5),
+                sma10=_compute_sma(close_prices, 10),
+                volume=volume,
+                volatility_regime=_volatility_regime(high, low, close),
+            )
+            # F6: write regime_label/regime_probability, then resolve the
+            # effective constraints for this regime (conservative if unknown).
+            self._enricher.enrich(world_state_obj, buffer)
+            world_state: dict[str, Any] = world_state_obj.to_dict()
+            resolved_constraints = self._resolver.resolve(constraints, world_state)
 
             artifact = self._loop.run(
                 world_state=world_state,
-                constraints=constraints,
+                constraints=resolved_constraints,
                 portfolio_state=portfolio_state,
                 db_store=self._db_store,
                 strategy_id=self._strategy_id,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json
-import sys
 from pathlib import Path
 
 from player_coach.agents.coach import CoachAgent
@@ -9,17 +8,17 @@ from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
 from player_coach.database.store import DatabaseStore
 from player_coach.loop.coach_loop import CoachLoop
+from player_coach.market import WorldState
 
-WORLD_STATE = {
-    "symbol": "AMZN",
-    "price": 185.00,
-    "sma5": 183.00,
-    "sma10": 180.00,
-    "volume": 45_000_000,
-    "position": "flat",
-    "volatility_regime": "medium",
-    "session": "NY_open",
-}
+WORLD_STATE = WorldState(
+    symbol="AMZN",
+    price=185.00,
+    sma5=183.00,
+    sma10=180.00,
+    volume=45_000_000,
+    position="flat",
+    volatility_regime="medium",
+).to_dict()
 
 CONSTRAINTS_PATH = Path("examples/constraints/moderate.json")
 DATA_DIR = Path("data")

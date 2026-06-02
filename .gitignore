@@ -27,3 +27,7 @@ outputs/
 data/
 CLAUDE.md
 
+# Strategy IP — feature specs and proprietary regime tuning
+docs/features/
+examples/constraints/regime_profiles.json
+

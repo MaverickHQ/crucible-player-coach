@@ -125,3 +125,66 @@ def test_backtest_result_total_pnl_pct_computed_correctly(tmp_path: Path) -> Non
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)
     assert result.total_exchanges == len(prices)
     assert result.total_pnl_pct == result.total_pnl / 100_000.0
+
+
+# ----------------------------------------------------- F6 regime wiring (Seam 0)
+
+def test_world_state_passed_to_loop_has_regime_fields(tmp_path: Path) -> None:
+    prices = [185.0, 186.0, 187.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    world_state = loop.run.call_args.kwargs["world_state"]
+    assert "regime_label" in world_state
+    assert "regime_probability" in world_state
+
+
+def test_short_history_yields_unknown_regime(tmp_path: Path) -> None:
+    # Fewer than 30 returns → the detector degrades to "unknown".
+    prices = [185.0, 186.0, 187.0, 188.0, 189.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    assert loop.run.call_args.kwargs["world_state"]["regime_label"] == "unknown"
+
+
+def test_unknown_regime_applies_conservative_constraints(tmp_path: Path) -> None:
+    # Base max_single_trade_pct is 0.05; the conservative (unknown) profile
+    # multiplies by 0.6 → 0.03. Confirms the resolver is wired into the runner.
+    prices = [185.0, 186.0, 187.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    resolved = loop.run.call_args.kwargs["constraints"]
+    assert resolved.max_single_trade_pct == 0.03
+    assert resolved.max_open_positions == 2
+
+
+def test_world_state_passed_to_loop_has_garch_vol_key(tmp_path: Path) -> None:
+    prices = [185.0, 186.0, 187.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    assert "garch_vol" in loop.run.call_args.kwargs["world_state"]
+
+
+class _FakeEnricher:
+    """Writes a fixed regime + garch forecast so the resolver wiring is testable
+    without fitting models on a long synthetic series."""
+
+    def enrich(self, world_state, buffer):
+        world_state.regime_label = "low_vol"
+        world_state.garch_vol = 0.04
+        return world_state
+
+
+def test_runner_default_resolver_applies_garch_scaling(tmp_path: Path) -> None:
+    loop = MagicMock()
+    loop.run.return_value = _make_approve_artifact()
+    runner = BacktestRunner(
+        loop=loop,
+        db_store=MagicMock(),
+        strategy_id="s",
+        enricher=_FakeEnricher(),
+    )
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df([185.0, 186.0])
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    resolved = loop.run.call_args.kwargs["constraints"]
+    # low_vol overlay (1.0x) then garch 0.04 → 0.5 floor → 0.05 * 0.5 = 0.025.
+    assert resolved.max_single_trade_pct == 0.025

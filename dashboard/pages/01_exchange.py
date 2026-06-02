@@ -10,6 +10,7 @@ from dashboard.components.speech_bubble import SpeechBubble
 from dashboard.db import get_store
 from dashboard.streaming.loop_runner import DashboardRunner
 from player_coach.constraints.schema import ConstraintSchema
+from player_coach.market import WorldState
 
 # ---------------------------------------------------------------------------
 # Constraint presets (inline — no file I/O at import time)
@@ -247,16 +248,16 @@ elif run_clicked:
         constraints = ConstraintSchema.from_dict(
             {**constraints_dict, "max_rounds": max_rounds}
         )
-        world_state = {
-            "symbol": symbol,
-            "price": price,
-            "sma5": sma5,
-            "sma10": sma10,
-            "volume": int(volume),
-            "position": "flat",
-            "volatility_regime": volatility,
-            "session": session,
-        }
+        world_state = WorldState(
+            symbol=symbol,
+            price=price,
+            sma5=sma5,
+            sma10=sma10,
+            volume=int(volume),
+            position="flat",
+            volatility_regime=volatility,
+            session=session,
+        ).to_dict()
         runner = DashboardRunner(
             constraints=constraints,
             world_state=world_state,

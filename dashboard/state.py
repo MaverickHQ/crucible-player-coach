@@ -4,6 +4,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from player_coach.market import WorldState
+
 _moderate_path = (
     Path(__file__).parent.parent / "examples" / "constraints" / "moderate.json"
 )
@@ -29,16 +31,15 @@ def init_session_state() -> None:
             if _moderate_path.exists()
             else _moderate_default
         ),
-        "world_state": {
-            "symbol": "AMZN",
-            "price": 185.0,
-            "sma5": 183.0,
-            "sma10": 180.0,
-            "volume": 45_000_000,
-            "position": "flat",
-            "volatility_regime": "medium",
-            "session": "NY_open",
-        },
+        "world_state": WorldState(
+            symbol="AMZN",
+            price=185.0,
+            sma5=183.0,
+            sma10=180.0,
+            volume=45_000_000,
+            position="flat",
+            volatility_regime="medium",
+        ).to_dict(),
         "last_artifact": None,
         "player_state": "confident",
         "coach_state": "stern",
