@@ -17,7 +17,6 @@ WORLD_STATE = WorldState(
     sma10=180.00,
     volume=45_000_000,
     position="flat",
-    volatility_regime="medium",
 ).to_dict()
 
 CONSTRAINTS_PATH = Path("examples/constraints/moderate.json")

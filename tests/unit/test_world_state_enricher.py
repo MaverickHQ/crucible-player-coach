@@ -40,28 +40,59 @@ def test_empty_enricher_returns_world_state_unchanged():
 # ------------------------------------------------------------- writes results
 
 def test_feature_output_written_onto_world_state():
-    feature = _FixedFeature("fake", {"volatility_regime": "high"})
+    feature = _FixedFeature("fake", {"regime_label": "high_vol"})
     out = WorldStateEnricher([feature]).enrich(_ws(), OHLCVBuffer())
-    assert out.volatility_regime == "high"
+    assert out.regime_label == "high_vol"
 
 
 def test_multiple_features_all_applied():
     a = _FixedFeature("a", {"session": "LDN_open"})
-    b = _FixedFeature("b", {"volatility_regime": "low"})
+    b = _FixedFeature("b", {"regime_label": "low_vol"})
     out = WorldStateEnricher([a, b]).enrich(_ws(), OHLCVBuffer())
     assert out.session == "LDN_open"
-    assert out.volatility_regime == "low"
+    assert out.regime_label == "low_vol"
 
 
 # --------------------------------------------------------- graceful degradation
 
 def test_failing_feature_is_skipped_not_raised():
     out = WorldStateEnricher([_BoomFeature()]).enrich(_ws(), OHLCVBuffer())
-    assert out.volatility_regime == "medium"  # untouched default, no exception
+    assert out.regime_label == "unknown"  # untouched default, no exception
 
 
 def test_failing_feature_does_not_block_later_features():
     a = _BoomFeature()
-    b = _FixedFeature("b", {"volatility_regime": "low"})
+    b = _FixedFeature("b", {"session": "LDN_open"})
     out = WorldStateEnricher([a, b]).enrich(_ws(), OHLCVBuffer())
-    assert out.volatility_regime == "low"
+    assert out.session == "LDN_open"
+
+
+# ----------------------------------------------------------------- reset (#7)
+
+class _ResettableFeature:
+    name = "resettable"
+
+    def __init__(self) -> None:
+        self.reset_called = False
+
+    def compute(self, buffer: OHLCVBuffer) -> dict[str, Any]:
+        return {}
+
+    def reset(self) -> None:
+        self.reset_called = True
+
+
+def test_enricher_reset_calls_feature_reset():
+    feature = _ResettableFeature()
+    WorldStateEnricher([feature]).reset()
+    assert feature.reset_called
+
+
+def test_enricher_reset_tolerates_feature_without_reset():
+    class _NoReset:
+        name = "noreset"
+
+        def compute(self, buffer):
+            return {}
+
+    WorldStateEnricher([_NoReset()]).reset()  # must not raise

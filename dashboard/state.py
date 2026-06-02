@@ -38,7 +38,6 @@ def init_session_state() -> None:
             sma10=180.0,
             volume=45_000_000,
             position="flat",
-            volatility_regime="medium",
         ).to_dict(),
         "last_artifact": None,
         "player_state": "confident",

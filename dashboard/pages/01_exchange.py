@@ -141,7 +141,9 @@ with st.sidebar:
     sma10 = st.number_input("SMA 10-day", value=mkt.get("sma10", 180.0), step=1.0, key=f"sma10_{symbol}")
     volume = st.number_input("Volume", value=mkt.get("volume", 45000000), step=100000, key=f"volume_{symbol}")
     session = st.selectbox("Session", ["NY_open", "NY_mid", "NY_close", "overnight"])
-    volatility = st.selectbox("Volatility Regime", ["low", "medium", "high"])
+    regime = st.selectbox(
+        "Regime", ["unknown", "low_vol", "medium_vol", "high_vol"]
+    )
 
     st.divider()
     st.header("Constraints")
@@ -255,7 +257,7 @@ elif run_clicked:
             sma10=sma10,
             volume=int(volume),
             position="flat",
-            volatility_regime=volatility,
+            regime_label=regime,
             session=session,
         ).to_dict()
         runner = DashboardRunner(

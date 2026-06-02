@@ -46,6 +46,47 @@ def test_empty_buffer_returns_none():
     assert GARCHFeature().compute(OHLCVBuffer())["garch_vol"] is None
 
 
+class _NonFiniteModel:
+    """Test double whose forecast is NaN — a degenerate GARCH fit."""
+
+    def fit(self, returns):
+        return self
+
+    def forecast_vol_on(self, returns):
+        return float("nan")
+
+
+def test_nonfinite_forecast_returns_none():
+    out = GARCHFeature(model=_NonFiniteModel()).compute(_fill_buffer(160))
+    assert out["garch_vol"] is None
+
+
+# ----------------------------------------------------- refit cadence (#3)
+
+class _CountingModel:
+    def __init__(self) -> None:
+        self.fit_calls = 0
+        self.forecast_calls = 0
+
+    def fit(self, returns):
+        self.fit_calls += 1
+        return self
+
+    def forecast_vol_on(self, returns):
+        self.forecast_calls += 1
+        return 0.01
+
+
+def test_garch_refits_on_cadence_but_forecasts_daily():
+    model = _CountingModel()
+    feature = GARCHFeature(model=model, refit_every=20)
+    buf = _fill_buffer(160)
+    for _ in range(25):
+        feature.compute(buf)
+    assert model.fit_calls == 2       # refit at call 1 and 22
+    assert model.forecast_calls == 25  # fresh forecast every day
+
+
 # ------------------------------------------------------------ enricher wiring
 
 def test_enricher_writes_garch_vol_onto_world_state():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import Any, Callable
 
@@ -96,7 +97,7 @@ def garch_scale(
 
     def stage(schema: ConstraintSchema, context: dict[str, Any]) -> ConstraintSchema:
         garch_vol = context.get("garch_vol")
-        if not garch_vol or garch_vol <= 0:
+        if garch_vol is None or not math.isfinite(garch_vol) or garch_vol <= 0:
             return schema
         regime = context.get("regime_label") or "unknown"
         cap = stressed_cap if regime in ("high_vol", "unknown") else calm_cap
@@ -105,5 +106,22 @@ def garch_scale(
             schema,
             max_single_trade_pct=round(schema.max_single_trade_pct * scale, 6),
         )
+
+    return stage
+
+
+def clamp_invariants() -> Stage:
+    """Final resolver stage enforcing constraint coherence.
+
+    Per-field scaling (e.g. ``garch_scale`` touches only single-trade size) can
+    push ``max_single_trade_pct`` above ``max_position_pct`` — an incoherent pair
+    (one trade larger than the whole book). Clamp single down to position. Append
+    this last in the resolver pipeline.
+    """
+
+    def stage(schema: ConstraintSchema, context: dict[str, Any]) -> ConstraintSchema:
+        if schema.max_single_trade_pct <= schema.max_position_pct:
+            return schema
+        return replace(schema, max_single_trade_pct=schema.max_position_pct)
 
     return stage

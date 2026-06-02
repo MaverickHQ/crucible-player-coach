@@ -58,3 +58,16 @@ def test_fit_accepts_minimum_data():
 def test_forecast_before_fit_raises():
     with pytest.raises(RuntimeError):
         VolatilityModel().forecast_vol()
+
+
+# ----------------------------------------- forecast on new data, cached params
+
+def test_forecast_vol_on_uses_cached_params():
+    model = VolatilityModel().fit(_calm(seed=10))
+    vol = model.forecast_vol_on(_calm(n=60, seed=11))
+    assert vol > 0.0
+
+
+def test_forecast_vol_on_before_fit_raises():
+    with pytest.raises(RuntimeError):
+        VolatilityModel().forecast_vol_on(_calm(n=60))

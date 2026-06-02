@@ -170,6 +170,33 @@ class _FakeEnricher:
         return world_state
 
 
+class _SpyEnricher:
+    def __init__(self) -> None:
+        self.reset_calls = 0
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+    def enrich(self, world_state, buffer):
+        return world_state
+
+
+def test_runner_resets_enricher_at_run_start(tmp_path: Path) -> None:
+    loop = MagicMock()
+    loop.run.return_value = _make_approve_artifact()
+    spy = _SpyEnricher()
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s", enricher=spy,
+    )
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df([185.0, 186.0])
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    assert spy.reset_calls == 1
+
+
 def test_runner_default_resolver_applies_garch_scaling(tmp_path: Path) -> None:
     loop = MagicMock()
     loop.run.return_value = _make_approve_artifact()

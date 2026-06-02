@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import numpy as np
+
 from player_coach.market.ohlcv import OHLCVBuffer
 from player_coach.market.volatility_model import VolatilityModel
 
@@ -26,10 +28,19 @@ class GARCHFeature:
         model: VolatilityModel | None = None,
         lookback: int = 250,
         min_obs: int = 30,
+        refit_every: int = 20,
     ) -> None:
         self._model = model or VolatilityModel(min_obs=min_obs)
         self._lookback = lookback
         self._min_obs = min_obs
+        self._refit_every = max(1, refit_every)
+        self._fitted = False
+        self._since_fit = 0
+
+    def reset(self) -> None:
+        """Clear cached params (call between backtest runs)."""
+        self._fitted = False
+        self._since_fit = 0
 
     def compute(self, buffer: OHLCVBuffer) -> dict[str, Any]:
         returns = buffer.log_returns()
@@ -42,9 +53,21 @@ class GARCHFeature:
 
         window = returns[-self._lookback:]
         try:
-            vol = self._model.fit_forecast(window)
+            # Re-estimate params only on cadence; forecast daily on the current
+            # window using cached params (cheap GARCH filter, no optimisation).
+            if not self._fitted or self._since_fit >= self._refit_every:
+                self._model.fit(window)
+                self._fitted = True
+                self._since_fit = 0
+            else:
+                self._since_fit += 1
+            vol = self._model.forecast_vol_on(window)
         except Exception:
             logger.warning("GARCHFeature: fit failed; garch_vol=None", exc_info=True)
+            return {"garch_vol": None}
+
+        if vol is None or not np.isfinite(vol):
+            logger.warning("GARCHFeature: non-finite forecast; garch_vol=None")
             return {"garch_vol": None}
 
         return {"garch_vol": round(float(vol), 8)}

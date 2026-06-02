@@ -45,6 +45,24 @@ def test_handles_negative_price_without_nan():
     assert np.all(np.isfinite(r))
 
 
+def test_forward_fill_preserves_move_across_gap():
+    # A bad bar should not erase the real move when good data resumes:
+    # [100, NaN, 110] forward-fills to [100, 100, 110] → [0, ln(1.1)].
+    r = compute_log_returns([100.0, float("nan"), 110.0])
+    assert r[0] == 0.0
+    assert math.isclose(r[1], math.log(1.1), rel_tol=1e-9)
+
+
+def test_forward_fill_zero_price_preserves_move():
+    r = compute_log_returns([100.0, 0.0, 110.0])
+    assert math.isclose(r[1], math.log(1.1), rel_tol=1e-9)
+
+
+def test_leading_bad_price_is_safe():
+    r = compute_log_returns([float("nan"), 100.0, 110.0])
+    assert np.all(np.isfinite(r))
+
+
 # ----------------------------------------------------------- input flexibility
 
 def test_accepts_pandas_series():

@@ -25,27 +25,47 @@ class VolatilityModel:
         self.min_obs = min_obs
         self.rescale = rescale
         self._result: Any | None = None
+        self._params: Any | None = None
 
-    def fit(self, returns: np.ndarray) -> VolatilityModel:
+    def _build(self, returns: np.ndarray):
         from arch import arch_model
 
-        validate_returns(returns, min_obs=self.min_obs)
         scaled = np.asarray(returns, dtype=float).ravel() * self.rescale
-        model = arch_model(
+        return arch_model(
             scaled, vol="GARCH", p=1, q=1, mean="Constant", dist="normal"
         )
+
+    @staticmethod
+    def _forecast_vol_from(result: Any, rescale: float) -> float:
+        forecast = result.forecast(horizon=1, reindex=False)
+        variance_scaled = float(forecast.variance.values[-1, 0])
+        return float(np.sqrt(variance_scaled)) / rescale
+
+    def fit(self, returns: np.ndarray) -> VolatilityModel:
+        validate_returns(returns, min_obs=self.min_obs)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self._result = model.fit(disp="off")
+            self._result = self._build(returns).fit(disp="off")
+        self._params = self._result.params
         return self
 
     def forecast_vol(self) -> float:
         """Next-day conditional volatility, in the input return's units."""
         if self._result is None:
             raise RuntimeError("call fit() before forecast_vol()")
-        forecast = self._result.forecast(horizon=1, reindex=False)
-        variance_scaled = float(forecast.variance.values[-1, 0])
-        return float(np.sqrt(variance_scaled)) / self.rescale
+        return self._forecast_vol_from(self._result, self.rescale)
+
+    def forecast_vol_on(self, returns: np.ndarray) -> float:
+        """Forecast on a fresh window using the **cached** params, without
+        re-estimating. Enables rolling daily forecasts between periodic refits
+        (params estimated by :meth:`fit`, filter re-run on new data via ``fix``).
+        """
+        if self._params is None:
+            raise RuntimeError("call fit() before forecast_vol_on()")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fixed = self._build(returns).fix(self._params)
+        return self._forecast_vol_from(fixed, self.rescale)
 
     def fit_forecast(self, returns: np.ndarray) -> float:
         """Convenience: fit then forecast on the same series."""

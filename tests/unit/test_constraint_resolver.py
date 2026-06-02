@@ -10,6 +10,7 @@ from player_coach.constraints.regime_profiles import (
 )
 from player_coach.constraints.resolver import (
     ConstraintResolver,
+    clamp_invariants,
     garch_scale,
     regime_overlay,
 )
@@ -147,6 +148,14 @@ def test_zero_garch_vol_means_no_scaling():
     assert _resolve_garch(0.0).max_single_trade_pct == 0.05
 
 
+def test_nan_garch_vol_means_no_scaling():
+    assert _resolve_garch(float("nan")).max_single_trade_pct == 0.05
+
+
+def test_inf_garch_vol_means_no_scaling():
+    assert _resolve_garch(float("inf")).max_single_trade_pct == 0.05
+
+
 def test_size_is_monotonic_non_increasing_in_forecast():
     low = _resolve_garch(0.005).max_single_trade_pct
     mid = _resolve_garch(0.02).max_single_trade_pct
@@ -169,3 +178,37 @@ def test_regime_then_garch_compose_in_pipeline():
         _base_schema(), {"regime_label": "high_vol", "garch_vol": 0.04}
     )
     assert out.max_single_trade_pct == 0.015
+
+
+# ----------------------------------------- clamp_invariants stage (#4)
+
+def _tight_schema() -> ConstraintSchema:
+    # single (0.05) close to position (0.06): calm garch scaling can invert them.
+    return ConstraintSchema(
+        max_position_pct=0.06, max_single_trade_pct=0.05, max_leverage=1.5,
+        max_drawdown_pct=0.10, allowed_symbols=["AMZN"], max_open_positions=3,
+        min_risk_reward=1.5, abort_on_violations=["max_leverage"],
+    )
+
+
+def test_clamp_caps_single_at_position():
+    resolver = ConstraintResolver([garch_scale(), clamp_invariants()])
+    out = resolver.resolve(
+        _tight_schema(), {"regime_label": "low_vol", "garch_vol": 0.005}
+    )
+    # garch would push single to 0.0625 > position 0.06; clamp caps it.
+    assert out.max_single_trade_pct == 0.06
+    assert out.max_single_trade_pct <= out.max_position_pct
+
+
+def test_clamp_noop_when_already_coherent():
+    out = ConstraintResolver([clamp_invariants()]).resolve(_base_schema(), {})
+    assert out.max_single_trade_pct == 0.05  # 0.05 <= 0.10, untouched
+
+
+def test_clamp_does_not_mutate_base():
+    base = _tight_schema()
+    ConstraintResolver([garch_scale(), clamp_invariants()]).resolve(
+        base, {"regime_label": "low_vol", "garch_vol": 0.005}
+    )
+    assert base.max_single_trade_pct == 0.05

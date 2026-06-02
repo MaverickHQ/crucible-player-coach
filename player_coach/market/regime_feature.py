@@ -26,10 +26,20 @@ class RegimeFeature:
         detector: RegimeDetector | None = None,
         lookback: int = 60,
         min_obs: int = 30,
+        refit_every: int = 20,
     ) -> None:
         self._detector = detector or RegimeDetector()
         self._lookback = lookback
         self._min_obs = min_obs
+        self._refit_every = max(1, refit_every)
+        self._fitted = False
+        self._since_fit = 0
+
+    def reset(self) -> None:
+        """Clear cached fit + smoothing state (call between backtest runs)."""
+        self._fitted = False
+        self._since_fit = 0
+        self._detector.reset()
 
     def compute(self, buffer: OHLCVBuffer) -> dict[str, Any]:
         returns = buffer.log_returns()
@@ -42,10 +52,20 @@ class RegimeFeature:
 
         window = returns[-self._lookback:]
         try:
-            label, probability = self._detector.fit_predict(window)
+            # Refit the HMM only on cadence (10 restarts is expensive); predict
+            # every day on the cached model with the current window.
+            if not self._fitted or self._since_fit >= self._refit_every:
+                self._detector.fit(window)
+                self._fitted = True
+                self._since_fit = 0
+            else:
+                self._since_fit += 1
+            label, probability = self._detector.predict(window)
         except Exception:
             logger.warning("RegimeFeature: HMM fit failed; regime=unknown",
                            exc_info=True)
             return {"regime_label": "unknown", "regime_probability": 0.0}
 
+        # Anti-flicker: a new regime must persist before it is reported.
+        label = self._detector.confirm_regime(label)
         return {"regime_label": label, "regime_probability": round(probability, 6)}

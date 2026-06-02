@@ -35,7 +35,7 @@ def _make_world_state() -> dict:
         "sma10": 180.00,
         "volume": 45_000_000,
         "position": "flat",
-        "volatility_regime": "medium",
+        "regime_label": "unknown",
         "session": "NY_open",
     }
 

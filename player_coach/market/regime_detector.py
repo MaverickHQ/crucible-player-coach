@@ -129,6 +129,12 @@ class RegimeDetector:
 
     # ----------------------------------------------------- persistence smoothing
 
+    def reset(self) -> None:
+        """Clear persistence-smoothing state (not the fitted model)."""
+        self._confirmed_label = None
+        self._pending_label = None
+        self._pending_count = 0
+
     def confirm_regime(self, raw_label: str) -> str:
         """Smooth a stream of raw daily labels into a flicker-resistant regime.
 

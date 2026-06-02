@@ -8,6 +8,7 @@ import yfinance as yf
 
 from player_coach.constraints.resolver import (
     ConstraintResolver,
+    clamp_invariants,
     garch_scale,
     regime_overlay,
 )
@@ -58,17 +59,6 @@ def _compute_sma(prices: list[float], n: int) -> float:
     return sum(prices[-n:]) / n
 
 
-def _volatility_regime(high: float, low: float, close: float) -> str:
-    if close == 0:
-        return "medium"
-    daily_range_pct = (high - low) / close
-    if daily_range_pct < 0.01:
-        return "low"
-    if daily_range_pct > 0.03:
-        return "high"
-    return "medium"
-
-
 class BacktestRunner:
     def __init__(
         self,
@@ -87,7 +77,7 @@ class BacktestRunner:
             [RegimeFeature(), GARCHFeature()]
         )
         self._resolver = resolver or ConstraintResolver(
-            [regime_overlay(), garch_scale()]
+            [regime_overlay(), garch_scale(), clamp_invariants()]
         )
 
     def run(
@@ -99,6 +89,11 @@ class BacktestRunner:
         initial_capital: float = 100_000.0,
         output_dir: str | Path = "artifacts",
     ) -> BacktestResult:
+        # Clear any stateful feature caches/smoothing from a previous run.
+        reset = getattr(self._enricher, "reset", None)
+        if callable(reset):
+            reset()
+
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start_date, end=end_date)
 
@@ -149,7 +144,6 @@ class BacktestRunner:
                 sma5=_compute_sma(close_prices, 5),
                 sma10=_compute_sma(close_prices, 10),
                 volume=volume,
-                volatility_regime=_volatility_regime(high, low, close),
             )
             # F6: write regime_label/regime_probability, then resolve the
             # effective constraints for this regime (conservative if unknown).

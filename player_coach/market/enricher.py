@@ -37,6 +37,15 @@ class WorldStateEnricher:
     def __init__(self, features: list[MarketFeature] | None = None) -> None:
         self._features: list[MarketFeature] = list(features or [])
 
+    def reset(self) -> None:
+        """Reset any stateful features (cached fits, smoothing) — call between
+        backtest runs so state does not leak across them. Features without a
+        ``reset`` are skipped."""
+        for feature in self._features:
+            reset = getattr(feature, "reset", None)
+            if callable(reset):
+                reset()
+
     def enrich(self, world_state: WorldState, buffer: OHLCVBuffer) -> WorldState:
         for feature in self._features:
             name = getattr(feature, "name", repr(feature))
