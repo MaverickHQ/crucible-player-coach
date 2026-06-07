@@ -14,6 +14,7 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "atr": None,
     "vwap": None,
     "price_vs_vwap": None,
+    "kelly_fraction": None,
     "position": None,
 }
 
@@ -51,6 +52,8 @@ class WorldState:
     # Feature 9: rolling VWAP and signed (price - vwap)/vwap. None until enriched.
     vwap: float | None = None
     price_vs_vwap: float | None = None
+    # Feature 10: half-Kelly sizing reference (capped by max_single_trade_pct).
+    kelly_fraction: float | None = None
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,6 +77,7 @@ class WorldState:
         data["atr"] = self.atr
         data["vwap"] = self.vwap
         data["price_vs_vwap"] = self.price_vs_vwap
+        data["kelly_fraction"] = self.kelly_fraction
         data["session"] = self.session
         return data
 
@@ -103,6 +107,9 @@ class WorldState:
             vwap=data.get("vwap", _OPTIONAL_DEFAULTS["vwap"]),
             price_vs_vwap=data.get(
                 "price_vs_vwap", _OPTIONAL_DEFAULTS["price_vs_vwap"]
+            ),
+            kelly_fraction=data.get(
+                "kelly_fraction", _OPTIONAL_DEFAULTS["kelly_fraction"]
             ),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )

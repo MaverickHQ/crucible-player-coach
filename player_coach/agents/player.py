@@ -98,6 +98,9 @@ Keep reasoning to 3-4 sentences. State your final calculation once — do not sh
 Rules:
 - Only propose symbols from the allowed list.
 - Each entry action's size_pct must not exceed max_single_trade_pct.
+- If world_state.kelly_fraction is present, treat it as a suggested sizing \
+reference (derived from your historical win rate) — let it guide size_pct, but \
+it is a guide, not a requirement, and never exceed max_single_trade_pct.
 - Total open positions must not exceed max_open_positions.
 - Risk/reward (|take_profit - entry| / |entry - stop_loss|) must meet min_risk_reward for entry actions.
 - Do not exceed max_leverage.

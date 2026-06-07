@@ -68,6 +68,37 @@ def _make_approve_artifact() -> dict:
     }
 
 
+def _action_artifact(action: dict) -> dict:
+    return {
+        "outcome": "APPROVE",
+        "run_id": "r",
+        "rounds": [{
+            "round": 1,
+            "proposal": {"actions": [action], "reasoning": ""},
+            "evaluation": {"decision": "APPROVE", "violations": [], "feedback": ""},
+            "tokens_used": {"player": 1, "coach": 1},
+        }],
+    }
+
+
+def _enter_artifact() -> dict:
+    return _action_artifact({
+        "action_type": "enter_long", "symbol": "AMZN", "size_pct": 0.05,
+        "entry_price": 185.0, "stop_loss": 183.0, "take_profit": 200.0,
+        "position_id": "P1",
+    })
+
+
+def _exit_artifact() -> dict:
+    return _action_artifact({
+        "action_type": "exit_position", "symbol": "AMZN", "position_id": "P1",
+    })
+
+
+def _hold_artifact() -> dict:
+    return _action_artifact({"action_type": "hold"})
+
+
 def _make_runner(loop: MagicMock, db_store: MagicMock) -> BacktestRunner:
     return BacktestRunner(loop=loop, db_store=db_store, strategy_id="test-strategy")
 
@@ -175,6 +206,18 @@ def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
     ws = loop.run.call_args.kwargs["world_state"]
     assert ws["vwap"] is not None and ws["vwap"] > 0.0
     assert ws["price_vs_vwap"] is not None
+
+
+def test_kelly_reference_none_until_trade_closes_then_populated(tmp_path: Path) -> None:
+    # Day 0 enter P1 @185, day 1 exit @200 (a win), day 2 hold.
+    prices = [185.0, 200.0, 200.0]
+    artifacts = [_enter_artifact(), _exit_artifact(), _hold_artifact()]
+    _, loop, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: artifacts[i], tmp_path=tmp_path
+    )
+    calls = loop.run.call_args_list
+    assert calls[0].kwargs["world_state"]["kelly_fraction"] is None   # no closed trade
+    assert calls[2].kwargs["world_state"]["kelly_fraction"] is not None  # one closed
 
 
 class _FakeEnricher:

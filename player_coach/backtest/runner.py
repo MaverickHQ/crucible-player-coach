@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import yfinance as yf
 
+from player_coach.analytics import half_kelly, trade_stats
 from player_coach.constraints.resolver import (
     ConstraintResolver,
     clamp_invariants,
@@ -110,6 +111,7 @@ class BacktestRunner:
         days_aborted = 0
         exchanges: list[dict] = []
         close_prices: list[float] = []
+        realized_trade_returns: list[float] = []
         buffer = OHLCVBuffer()
 
         for date, row in df.iterrows():
@@ -153,6 +155,14 @@ class BacktestRunner:
             world_state: dict[str, Any] = world_state_obj.to_dict()
             resolved_constraints = self._resolver.resolve(constraints, world_state)
 
+            # F10: half-Kelly sizing reference from realised trades so far,
+            # capped by the effective per-trade limit. None until a trade closes.
+            stats = trade_stats(realized_trade_returns)
+            if stats.count > 0:
+                world_state["kelly_fraction"] = half_kelly(
+                    stats, cap=resolved_constraints.max_single_trade_pct
+                )
+
             artifact = self._loop.run(
                 world_state=world_state,
                 constraints=resolved_constraints,
@@ -195,6 +205,9 @@ class BacktestRunner:
                             if pos.position_id == pid:
                                 proceeds = pos.cost * (close / pos.entry_price)
                                 cash_available += proceeds
+                                realized_trade_returns.append(
+                                    close / pos.entry_price - 1.0
+                                )
                             else:
                                 remaining.append(pos)
                         open_positions = remaining
