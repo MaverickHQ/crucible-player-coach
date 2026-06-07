@@ -17,6 +17,7 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "kelly_fraction": None,
     "challenge_phase": None,
     "challenge_pnl_pct": None,
+    "consistency_status": "ok",
     "position": None,
 }
 
@@ -59,6 +60,8 @@ class WorldState:
     # Feature 12: challenge phase + profit fraction. None outside a challenge.
     challenge_phase: str | None = None
     challenge_pnl_pct: float | None = None
+    # Feature 13: daily consistency signal — ok / approaching / breached.
+    consistency_status: str = "ok"
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,6 +88,7 @@ class WorldState:
         data["kelly_fraction"] = self.kelly_fraction
         data["challenge_phase"] = self.challenge_phase
         data["challenge_pnl_pct"] = self.challenge_pnl_pct
+        data["consistency_status"] = self.consistency_status
         data["session"] = self.session
         return data
 
@@ -123,6 +127,9 @@ class WorldState:
             ),
             challenge_pnl_pct=data.get(
                 "challenge_pnl_pct", _OPTIONAL_DEFAULTS["challenge_pnl_pct"]
+            ),
+            consistency_status=data.get(
+                "consistency_status", _OPTIONAL_DEFAULTS["consistency_status"]
             ),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )

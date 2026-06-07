@@ -160,6 +160,9 @@ class BacktestRunner:
                 volume=volume,
                 challenge_pnl_pct=challenge_pnl_pct,
                 challenge_phase=challenge_phase(challenge_pnl_pct),
+                consistency_status=constraints.consistency_status(
+                    daily_pnl, cumulative_pnl
+                ),
             )
             # F6: write regime_label/regime_probability, then resolve the
             # effective constraints for this regime (conservative if unknown).

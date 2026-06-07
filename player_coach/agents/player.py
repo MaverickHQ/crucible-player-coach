@@ -106,6 +106,9 @@ it is a guide, not a requirement, and never exceed max_single_trade_pct.
 - Do not exceed max_leverage.
 - For exit_position: include the position_id of the position being closed from open_positions.
 - For hold: actions list may be empty or contain one hold action.
+- If world_state.consistency_status is "approaching" or "breached", today's gain \
+is becoming a large share of total profit (the daily consistency rule) — prefer \
+smaller size or hold so no single day dominates the equity curve.
 - Only propose exit_position if there is an open position to close.
 - If revising, address every critique raised by the Coach.\
 """

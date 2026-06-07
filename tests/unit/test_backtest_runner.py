@@ -245,6 +245,26 @@ def test_default_resolver_tightens_on_phase_transition(tmp_path: Path) -> None:
             < day0["constraints"].max_single_trade_pct)
 
 
+def _enter_at(price: float) -> dict:
+    return _action_artifact({
+        "action_type": "enter_long", "symbol": "AMZN", "size_pct": 0.05,
+        "entry_price": price, "stop_loss": price * 0.99,
+        "take_profit": price * 1.1, "position_id": "P1",
+    })
+
+
+def test_world_state_carries_consistency_status(tmp_path: Path) -> None:
+    # Enter @100; day1 marks +500 (cumulative 500), day2 marks +500 again =
+    # 100% of prior profit → consistency "breached" surfaced day 2.
+    prices = [100.0, 110.0, 121.0]
+    arts = [_enter_at(100.0), _hold_artifact(), _hold_artifact()]
+    _, loop, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
+    statuses = [c.kwargs["world_state"]["consistency_status"]
+                for c in loop.run.call_args_list]
+    assert statuses[2] == "breached"
+
+
 def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)

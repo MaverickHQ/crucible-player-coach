@@ -18,6 +18,7 @@ BASE = {
     "min_stop_atr_multiple": 1.5,
     "prefer_entry_below_vwap": True,
     "trailing_max_drawdown_pct": 0.10,
+    "consistency_warn_pct": 0.40,
 }
 
 
@@ -46,6 +47,7 @@ def test_to_dict_expected_keys():
         "min_stop_atr_multiple",
         "prefer_entry_below_vwap",
         "trailing_max_drawdown_pct",
+        "consistency_warn_pct",
     }
     assert keys == expected
 
