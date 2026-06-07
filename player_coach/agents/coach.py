@@ -107,6 +107,13 @@ For exit actions (action_type is "exit_position"):
 For hold actions (action_type is "hold"):
 - Always APPROVE, no constraint checks needed.
 
+Soft preferences (ADVISORY ONLY — never reject and never list as a violation for
+these alone; just note them in the critique):
+- prefer_entry_below_vwap: when constraints.prefer_entry_below_vwap is true and an
+  enter_long has entry_price above world_state.vwap (price_vs_vwap > 0), note in
+  the critique that the entry is above VWAP. This is a soft preference, not a
+  constraint — it must NOT affect the verdict.
+
 REJECT if any constraint is violated. List only breached constraint names in violations.
 APPROVE only when every constraint is satisfied.\
 """

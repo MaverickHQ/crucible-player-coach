@@ -12,6 +12,8 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "regime_probability": 0.0,
     "garch_vol": None,
     "atr": None,
+    "vwap": None,
+    "price_vs_vwap": None,
     "position": None,
 }
 
@@ -46,6 +48,9 @@ class WorldState:
     garch_vol: float | None = None
     # Feature 8: 14-day Wilder ATR. None until enriched.
     atr: float | None = None
+    # Feature 9: rolling VWAP and signed (price - vwap)/vwap. None until enriched.
+    vwap: float | None = None
+    price_vs_vwap: float | None = None
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,6 +72,8 @@ class WorldState:
         data["regime_probability"] = self.regime_probability
         data["garch_vol"] = self.garch_vol
         data["atr"] = self.atr
+        data["vwap"] = self.vwap
+        data["price_vs_vwap"] = self.price_vs_vwap
         data["session"] = self.session
         return data
 
@@ -93,5 +100,9 @@ class WorldState:
             ),
             garch_vol=data.get("garch_vol", _OPTIONAL_DEFAULTS["garch_vol"]),
             atr=data.get("atr", _OPTIONAL_DEFAULTS["atr"]),
+            vwap=data.get("vwap", _OPTIONAL_DEFAULTS["vwap"]),
+            price_vs_vwap=data.get(
+                "price_vs_vwap", _OPTIONAL_DEFAULTS["price_vs_vwap"]
+            ),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )

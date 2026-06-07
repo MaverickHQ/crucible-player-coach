@@ -8,6 +8,7 @@ from player_coach.market.regime_detector import RegimeDetector
 from player_coach.market.regime_feature import RegimeFeature
 from player_coach.market.returns import compute_log_returns, validate_returns
 from player_coach.market.volatility_model import VolatilityModel
+from player_coach.market.vwap import VWAPFeature, compute_vwap
 from player_coach.market.world_state import WorldState
 
 __all__ = [
@@ -24,4 +25,6 @@ __all__ = [
     "GARCHFeature",
     "compute_atr",
     "ATRFeature",
+    "compute_vwap",
+    "VWAPFeature",
 ]

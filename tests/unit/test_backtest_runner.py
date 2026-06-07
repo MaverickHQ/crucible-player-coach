@@ -169,6 +169,14 @@ def test_world_state_carries_computed_atr(tmp_path: Path) -> None:
     assert atr is not None and atr > 0.0
 
 
+def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
+    prices = [185.0, 186.0, 187.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    ws = loop.run.call_args.kwargs["world_state"]
+    assert ws["vwap"] is not None and ws["vwap"] > 0.0
+    assert ws["price_vs_vwap"] is not None
+
+
 class _FakeEnricher:
     """Writes a fixed regime + garch forecast so the resolver wiring is testable
     without fitting models on a long synthetic series."""

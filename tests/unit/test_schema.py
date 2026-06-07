@@ -16,6 +16,7 @@ BASE = {
     "consistency_rule_pct": 0.50,
     "trading_cutoff_time": "16:20",
     "min_stop_atr_multiple": 1.5,
+    "prefer_entry_below_vwap": True,
 }
 
 
@@ -42,6 +43,7 @@ def test_to_dict_expected_keys():
         "consistency_rule_pct",
         "trading_cutoff_time",
         "min_stop_atr_multiple",
+        "prefer_entry_below_vwap",
     }
     assert keys == expected
 
@@ -57,3 +59,10 @@ def test_min_stop_atr_multiple_defaults_to_1_5():
     without = {k: v for k, v in BASE.items() if k != "min_stop_atr_multiple"}
     schema = ConstraintSchema.from_dict(without)
     assert schema.min_stop_atr_multiple == 1.5
+
+
+def test_prefer_entry_below_vwap_defaults_true():
+    # Old preset JSON without the F9 key must still load with the default.
+    without = {k: v for k, v in BASE.items() if k != "prefer_entry_below_vwap"}
+    schema = ConstraintSchema.from_dict(without)
+    assert schema.prefer_entry_below_vwap is True

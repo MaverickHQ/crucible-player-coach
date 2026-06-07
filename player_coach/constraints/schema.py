@@ -19,6 +19,9 @@ class ConstraintSchema:
     trading_cutoff_time: str = "16:20"
     # Feature 8: entry stop must be >= this multiple of ATR from entry.
     min_stop_atr_multiple: float = 1.5
+    # Feature 9: SOFT preference — prefer entries below VWAP. Advisory, not a
+    # hard constraint; the Coach notes it but never rejects for it alone.
+    prefer_entry_below_vwap: bool = True
 
     def is_daily_loss_breached(
         self, daily_pnl: float, daily_starting_balance: float
@@ -50,6 +53,7 @@ class ConstraintSchema:
             consistency_rule_pct=data.get("consistency_rule_pct", 0.50),
             trading_cutoff_time=data.get("trading_cutoff_time", "16:20"),
             min_stop_atr_multiple=data.get("min_stop_atr_multiple", 1.5),
+            prefer_entry_below_vwap=data.get("prefer_entry_below_vwap", True),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,4 +71,5 @@ class ConstraintSchema:
             "consistency_rule_pct": self.consistency_rule_pct,
             "trading_cutoff_time": self.trading_cutoff_time,
             "min_stop_atr_multiple": self.min_stop_atr_multiple,
+            "prefer_entry_below_vwap": self.prefer_entry_below_vwap,
         }

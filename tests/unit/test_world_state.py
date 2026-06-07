@@ -30,7 +30,8 @@ def test_runner_shape_has_no_position_key():
     ws = _make_world_state(regime_label="high_vol", session="NY_open")
     assert set(ws.to_dict()) == {
         "symbol", "price", "sma5", "sma10", "volume",
-        "regime_label", "regime_probability", "garch_vol", "atr", "session",
+        "regime_label", "regime_probability", "garch_vol", "atr",
+        "vwap", "price_vs_vwap", "session",
     }
 
 
@@ -48,6 +49,8 @@ def test_matches_demo_shape_with_position():
         "regime_probability": 0.0,
         "garch_vol": None,
         "atr": None,
+        "vwap": None,
+        "price_vs_vwap": None,
         "session": "NY_open",
     }
 
