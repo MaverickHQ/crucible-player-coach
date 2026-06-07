@@ -161,6 +161,28 @@ with st.sidebar:
     max_rounds = st.slider("Max Rounds", min_value=1, max_value=5, value=3)
 
     st.divider()
+    with st.expander("Challenge Monte Carlo (F14)"):
+        # Session-start P(pass): one number from the strategy's realised edge.
+        from player_coach.analytics import TradeStats, simulate_challenge
+
+        mc_win = st.slider("Win rate", 0.0, 1.0, 0.55, 0.01)
+        mc_avg_win = st.number_input("Avg win (fraction)", value=0.010, step=0.005, format="%.3f")
+        mc_avg_loss = st.number_input("Avg loss (fraction)", value=0.010, step=0.005, format="%.3f")
+        mc_target = st.number_input("Profit target", value=0.06, step=0.01, format="%.2f")
+        mc_dd = st.number_input("Drawdown limit", value=0.10, step=0.01, format="%.2f")
+        mc_days = st.number_input("Days remaining", value=20, step=1)
+        mc_tpd = st.number_input("Trades / day", value=1.0, step=0.5, format="%.1f")
+
+        mc_result = simulate_challenge(
+            TradeStats(count=50, win_rate=mc_win, avg_win=mc_avg_win, avg_loss=mc_avg_loss),
+            profit_target=mc_target, drawdown_limit=mc_dd,
+            days_remaining=int(mc_days), trades_per_day=mc_tpd, n_paths=2_000,
+        )
+        st.metric("P(pass)", f"{mc_result.success_probability:.0%}")
+        if mc_result.success_probability < 0.40:
+            st.warning("Below 40% → auto-escalate to conservation phase.")
+
+    st.divider()
     run_clicked = st.button("Run Exchange", type="primary", use_container_width=True)
 
 # ---------------------------------------------------------------------------

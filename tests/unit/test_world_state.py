@@ -32,7 +32,8 @@ def test_runner_shape_has_no_position_key():
         "symbol", "price", "sma5", "sma10", "volume",
         "regime_label", "regime_probability", "garch_vol", "atr",
         "vwap", "price_vs_vwap", "kelly_fraction",
-        "challenge_phase", "challenge_pnl_pct", "consistency_status", "session",
+        "challenge_phase", "challenge_pnl_pct", "consistency_status",
+        "mc_success_prob", "session",
     }
 
 
@@ -56,6 +57,7 @@ def test_matches_demo_shape_with_position():
         "challenge_phase": None,
         "challenge_pnl_pct": None,
         "consistency_status": "ok",
+        "mc_success_prob": None,
         "session": "NY_open",
     }
 

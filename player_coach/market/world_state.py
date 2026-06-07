@@ -18,6 +18,7 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "challenge_phase": None,
     "challenge_pnl_pct": None,
     "consistency_status": "ok",
+    "mc_success_prob": None,
     "position": None,
 }
 
@@ -62,6 +63,8 @@ class WorldState:
     challenge_pnl_pct: float | None = None
     # Feature 13: daily consistency signal — ok / approaching / breached.
     consistency_status: str = "ok"
+    # Feature 14: Monte Carlo P(pass) checked at session start. None until run.
+    mc_success_prob: float | None = None
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +92,7 @@ class WorldState:
         data["challenge_phase"] = self.challenge_phase
         data["challenge_pnl_pct"] = self.challenge_pnl_pct
         data["consistency_status"] = self.consistency_status
+        data["mc_success_prob"] = self.mc_success_prob
         data["session"] = self.session
         return data
 
@@ -130,6 +134,9 @@ class WorldState:
             ),
             consistency_status=data.get(
                 "consistency_status", _OPTIONAL_DEFAULTS["consistency_status"]
+            ),
+            mc_success_prob=data.get(
+                "mc_success_prob", _OPTIONAL_DEFAULTS["mc_success_prob"]
             ),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )
