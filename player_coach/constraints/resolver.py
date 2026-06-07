@@ -4,6 +4,7 @@ import math
 from dataclasses import replace
 from typing import Any, Callable
 
+from player_coach.constraints.phase_profiles import DEFAULT_PHASE_PROFILES
 from player_coach.constraints.regime_profiles import (
     DEFAULT_REGIME_PROFILES,
     RegimeConstraintProfile,
@@ -109,6 +110,29 @@ def garch_scale(
             schema,
             max_single_trade_pct=round(schema.max_single_trade_pct * scale, 6),
         )
+
+    return stage
+
+
+def phase_profile(
+    profiles: dict[str, RegimeConstraintProfile] | None = None,
+) -> Stage:
+    """Resolver stage (F12) that shifts constraints by challenge phase.
+
+    Reads ``context["challenge_phase"]`` (building/conservation/lock_in) and
+    applies the matching profile. ``lock_in`` zeroes ``max_open_positions`` to
+    block new entries. A missing or unknown phase leaves the schema unchanged.
+    """
+    profiles = profiles or DEFAULT_PHASE_PROFILES
+
+    def stage(schema: ConstraintSchema, context: dict[str, Any]) -> ConstraintSchema:
+        phase = context.get("challenge_phase")
+        if not phase:
+            return schema
+        profile = profiles.get(phase)
+        if profile is None:
+            return schema
+        return apply_regime_profile(schema, profile)
 
     return stage
 

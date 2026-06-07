@@ -12,6 +12,7 @@ from player_coach.constraints.resolver import (
     ConstraintResolver,
     clamp_invariants,
     garch_scale,
+    phase_profile,
     regime_overlay,
 )
 from player_coach.constraints.schema import ConstraintSchema
@@ -175,6 +176,43 @@ def test_size_is_monotonic_non_increasing_in_forecast():
     mid = _resolve_garch(0.02).max_single_trade_pct
     high = _resolve_garch(0.04).max_single_trade_pct
     assert low >= mid >= high
+
+
+# ----------------------------------------------------- F12 phase_profile stage
+
+def _resolve_phase(phase: str | None):
+    ctx = {} if phase is None else {"challenge_phase": phase}
+    return ConstraintResolver([phase_profile()]).resolve(_base_schema(), ctx)
+
+
+def test_building_phase_leaves_constraints_unchanged():
+    s = _resolve_phase("building")
+    assert s.max_single_trade_pct == 0.05
+    assert s.max_open_positions == 3
+
+
+def test_conservation_halves_size_and_raises_rr():
+    s = _resolve_phase("conservation")
+    assert s.max_single_trade_pct == 0.025   # 0.05 * 0.5
+    assert s.max_position_pct == 0.05        # 0.10 * 0.5
+    assert s.min_risk_reward == 1.8          # 1.5 * 1.2
+
+
+def test_lock_in_blocks_new_entries_and_minimises_size():
+    s = _resolve_phase("lock_in")
+    assert s.max_open_positions == 0          # no new directional risk
+    assert s.max_single_trade_pct == 0.0125   # 0.05 * 0.25
+
+
+def test_missing_phase_is_no_op():
+    assert _resolve_phase(None).max_single_trade_pct == 0.05
+
+
+def test_phase_profile_does_not_mutate_base():
+    base = _base_schema()
+    ConstraintResolver([phase_profile()]).resolve(base, {"challenge_phase": "lock_in"})
+    assert base.max_single_trade_pct == 0.05
+    assert base.max_open_positions == 3
 
 
 def test_garch_scale_does_not_mutate_base():

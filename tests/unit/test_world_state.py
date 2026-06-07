@@ -31,7 +31,8 @@ def test_runner_shape_has_no_position_key():
     assert set(ws.to_dict()) == {
         "symbol", "price", "sma5", "sma10", "volume",
         "regime_label", "regime_probability", "garch_vol", "atr",
-        "vwap", "price_vs_vwap", "kelly_fraction", "session",
+        "vwap", "price_vs_vwap", "kelly_fraction",
+        "challenge_phase", "challenge_pnl_pct", "session",
     }
 
 
@@ -52,6 +53,8 @@ def test_matches_demo_shape_with_position():
         "vwap": None,
         "price_vs_vwap": None,
         "kelly_fraction": None,
+        "challenge_phase": None,
+        "challenge_pnl_pct": None,
         "session": "NY_open",
     }
 

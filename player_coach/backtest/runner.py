@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Any
 import yfinance as yf
 
 from player_coach.analytics import half_kelly, trade_stats
+from player_coach.constraints.phase_profiles import challenge_phase
 from player_coach.constraints.resolver import (
     ConstraintResolver,
     clamp_invariants,
     garch_scale,
+    phase_profile,
     regime_overlay,
 )
 from player_coach.market import (
@@ -83,7 +85,7 @@ class BacktestRunner:
             [RegimeFeature(), GARCHFeature(), ATRFeature(), VWAPFeature()]
         )
         self._resolver = resolver or ConstraintResolver(
-            [regime_overlay(), garch_scale(), clamp_invariants()]
+            [regime_overlay(), garch_scale(), phase_profile(), clamp_invariants()]
         )
 
     def run(
@@ -145,12 +147,19 @@ class BacktestRunner:
                 cumulative_pnl=cumulative_pnl,
             )
 
+            # F12: challenge profit fraction (from the prior day's close) drives
+            # the phase, which the resolver's phase_profile stage acts on.
+            challenge_pnl_pct = (
+                cumulative_pnl / initial_capital if initial_capital else 0.0
+            )
             world_state_obj = WorldState(
                 symbol=symbol,
                 price=close,
                 sma5=_compute_sma(closes, 5),
                 sma10=_compute_sma(closes, 10),
                 volume=volume,
+                challenge_pnl_pct=challenge_pnl_pct,
+                challenge_phase=challenge_phase(challenge_pnl_pct),
             )
             # F6: write regime_label/regime_probability, then resolve the
             # effective constraints for this regime (conservative if unknown).

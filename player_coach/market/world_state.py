@@ -15,6 +15,8 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "vwap": None,
     "price_vs_vwap": None,
     "kelly_fraction": None,
+    "challenge_phase": None,
+    "challenge_pnl_pct": None,
     "position": None,
 }
 
@@ -54,6 +56,9 @@ class WorldState:
     price_vs_vwap: float | None = None
     # Feature 10: half-Kelly sizing reference (capped by max_single_trade_pct).
     kelly_fraction: float | None = None
+    # Feature 12: challenge phase + profit fraction. None outside a challenge.
+    challenge_phase: str | None = None
+    challenge_pnl_pct: float | None = None
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,6 +83,8 @@ class WorldState:
         data["vwap"] = self.vwap
         data["price_vs_vwap"] = self.price_vs_vwap
         data["kelly_fraction"] = self.kelly_fraction
+        data["challenge_phase"] = self.challenge_phase
+        data["challenge_pnl_pct"] = self.challenge_pnl_pct
         data["session"] = self.session
         return data
 
@@ -110,6 +117,12 @@ class WorldState:
             ),
             kelly_fraction=data.get(
                 "kelly_fraction", _OPTIONAL_DEFAULTS["kelly_fraction"]
+            ),
+            challenge_phase=data.get(
+                "challenge_phase", _OPTIONAL_DEFAULTS["challenge_phase"]
+            ),
+            challenge_pnl_pct=data.get(
+                "challenge_pnl_pct", _OPTIONAL_DEFAULTS["challenge_pnl_pct"]
             ),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )

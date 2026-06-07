@@ -220,6 +220,31 @@ def test_sma_computed_from_buffer_closes(tmp_path: Path) -> None:
     assert ws["sma10"] == 50.0  # < 10 bars → falls back to the latest price
 
 
+def test_world_state_carries_challenge_phase(tmp_path: Path) -> None:
+    # Holds → no positions → no P&L → 0% profit → building.
+    _, loop, _ = _run_with_prices(
+        [185.0, 186.0, 187.0], artifact_factory=lambda i: _hold_artifact(),
+        tmp_path=tmp_path)
+    ws = loop.run.call_args.kwargs["world_state"]
+    assert ws["challenge_phase"] == "building"
+    assert ws["challenge_pnl_pct"] == 0.0
+
+
+def test_default_resolver_tightens_on_phase_transition(tmp_path: Path) -> None:
+    # Enter @185 day 0; price jumps to 333 → ~4% account gain → conservation by
+    # day 2, which must resolve to a tighter per-trade limit than day 0.
+    prices = [185.0, 333.0, 333.0]
+    arts = [_enter_artifact(), _hold_artifact(), _hold_artifact()]
+    _, loop, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
+    day0 = loop.run.call_args_list[0].kwargs
+    day2 = loop.run.call_args_list[2].kwargs
+    assert day0["world_state"]["challenge_phase"] == "building"
+    assert day2["world_state"]["challenge_phase"] == "conservation"
+    assert (day2["constraints"].max_single_trade_pct
+            < day0["constraints"].max_single_trade_pct)
+
+
 def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
