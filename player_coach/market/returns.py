@@ -36,29 +36,32 @@ def _forward_fill_prices(arr: np.ndarray) -> np.ndarray:
 def compute_log_returns(prices: Any) -> np.ndarray:
     """Daily log returns ``ln(p_t / p_{t-1})`` for a price series.
 
-    Returns an array of length ``len(prices) - 1`` (empty for 0 or 1 prices).
-    Bad bars (NaN, zero, negative) are forward-filled from the last valid price,
-    so a gap produces a single flat return and preserves the real move on
-    resumption. Any residual non-finite result (e.g. a leading bad bar) is
-    replaced with ``0.0`` and a warning logged, so nothing leaks downstream.
+    Bad bars (NaN, zero, negative) are forward-filled for price continuity, then
+    the **artificial** return *into* a bad bar (a zero-variance flat) is dropped
+    while the real move on resumption — computed against the last good price — is
+    kept. Residual non-finite returns (e.g. a leading bad bar with no prior
+    price) are also dropped. This keeps fake calm days out of the volatility
+    models that consume these returns. For clean prices the result has the usual
+    length ``len(prices) - 1``.
     """
     arr = _to_float_array(prices)
     if arr.size < 2:
         return np.empty(0, dtype=float)
 
-    arr = _forward_fill_prices(arr)
+    bad = ~np.isfinite(arr) | (arr <= 0.0)  # originally-bad bars
+    filled = _forward_fill_prices(arr)
     with np.errstate(divide="ignore", invalid="ignore"):
-        log_returns = np.log(arr[1:] / arr[:-1])
+        log_returns = np.log(filled[1:] / filled[:-1])
 
-    non_finite = ~np.isfinite(log_returns)
-    if non_finite.any():
+    # Drop returns INTO a bad bar (artificial flats) and any residual non-finite.
+    keep = ~bad[1:] & np.isfinite(log_returns)
+    dropped = log_returns.size - int(keep.sum())
+    if dropped:
         logger.warning(
-            "compute_log_returns: %d non-finite return(s) from bad prices "
-            "replaced with 0.0",
-            int(non_finite.sum()),
+            "compute_log_returns: dropped %d contaminated return(s) from bad bars",
+            dropped,
         )
-        log_returns = np.where(non_finite, 0.0, log_returns)
-    return log_returns
+    return log_returns[keep]
 
 
 def validate_returns(returns: Any, min_obs: int = 30) -> None:

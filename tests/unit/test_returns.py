@@ -45,17 +45,23 @@ def test_handles_negative_price_without_nan():
     assert np.all(np.isfinite(r))
 
 
-def test_forward_fill_preserves_move_across_gap():
-    # A bad bar should not erase the real move when good data resumes:
-    # [100, NaN, 110] forward-fills to [100, 100, 110] → [0, ln(1.1)].
+def test_gap_day_dropped_real_move_preserved():
+    # [100, NaN, 110]: the artificial zero-variance gap return is DROPPED (it
+    # would otherwise bias GARCH/HMM); only the real move across the gap remains.
     r = compute_log_returns([100.0, float("nan"), 110.0])
-    assert r[0] == 0.0
-    assert math.isclose(r[1], math.log(1.1), rel_tol=1e-9)
+    assert len(r) == 1
+    assert math.isclose(r[0], math.log(1.1), rel_tol=1e-9)
 
 
-def test_forward_fill_zero_price_preserves_move():
+def test_zero_price_gap_dropped():
     r = compute_log_returns([100.0, 0.0, 110.0])
-    assert math.isclose(r[1], math.log(1.1), rel_tol=1e-9)
+    assert len(r) == 1
+    assert math.isclose(r[0], math.log(1.1), rel_tol=1e-9)
+
+
+def test_clean_series_keeps_all_returns():
+    r = compute_log_returns([100.0, 110.0, 121.0])
+    assert len(r) == 2  # no bad bars → nothing dropped
 
 
 def test_leading_bad_price_is_safe():

@@ -144,6 +144,16 @@ with st.sidebar:
     regime = st.selectbox(
         "Regime", ["unknown", "low_vol", "medium_vol", "high_vol"]
     )
+    atr_input = st.number_input(
+        "ATR (0 = unavailable)", value=0.0, min_value=0.0, step=0.5,
+        help="14-day ATR. Enables the min_stop_atr_multiple check when > 0.",
+        key=f"atr_{symbol}",
+    )
+    vwap_input = st.number_input(
+        "VWAP (0 = unavailable)", value=0.0, min_value=0.0, step=1.0,
+        help="Rolling VWAP. Enables the prefer_entry_below_vwap note when > 0.",
+        key=f"vwap_{symbol}",
+    )
 
     st.divider()
     st.header("Constraints")
@@ -258,6 +268,9 @@ elif run_clicked:
             volume=int(volume),
             position="flat",
             regime_label=regime,
+            atr=atr_input or None,
+            vwap=vwap_input or None,
+            price_vs_vwap=((price - vwap_input) / vwap_input) if vwap_input else None,
             session=session,
         ).to_dict()
         runner = DashboardRunner(

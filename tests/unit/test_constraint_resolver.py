@@ -54,6 +54,20 @@ def test_high_vol_caps_open_positions():
     assert _resolve("high_vol").max_open_positions == 2
 
 
+def test_conservative_override_never_loosens_open_positions():
+    # A preset already tighter than the override (1 < 2) must NOT be raised to 2:
+    # a conservative fallback can only tighten.
+    base = ConstraintSchema(
+        max_position_pct=0.05, max_single_trade_pct=0.02, max_leverage=1.0,
+        max_drawdown_pct=0.05, allowed_symbols=["AMZN"], max_open_positions=1,
+        min_risk_reward=2.0, abort_on_violations=["max_leverage"],
+    )
+    resolved = ConstraintResolver([regime_overlay()]).resolve(
+        base, {"regime_label": "unknown"}
+    )
+    assert resolved.max_open_positions == 1
+
+
 def test_low_vol_leaves_constraints_unchanged():
     s = _resolve("low_vol")
     assert s.max_single_trade_pct == 0.05

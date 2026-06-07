@@ -52,8 +52,11 @@ def apply_regime_profile(
         min_risk_reward=round(
             schema.min_risk_reward * profile.min_risk_reward_mult, 6
         ),
+        # The override is a ceiling, never a floor: a conservative profile must
+        # only tighten, so cap at the base rather than risk loosening a stricter
+        # preset (e.g. base max_open_positions=1 must not be raised to 2).
         max_open_positions=(
-            profile.max_open_positions_override
+            min(schema.max_open_positions, profile.max_open_positions_override)
             if profile.max_open_positions_override is not None
             else schema.max_open_positions
         ),

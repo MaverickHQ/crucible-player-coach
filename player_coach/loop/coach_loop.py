@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from player_coach.agents.coach import CoachAgent
 from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
+from player_coach.constraints.checker import check_constraints
 from player_coach.constraints.schema import ConstraintSchema
 from player_coach.evaluators.reasoning_evaluator import ReasoningEvaluator
 from player_coach.loop.circuit_breakers import (
@@ -114,6 +115,26 @@ class CoachLoop:
                 world_state=world_state,
             )
             verdict = coach_result["verdict"]
+            violations = list(coach_result.get("violations", []))
+            feedback = coach_result.get("critique") or ""
+
+            # Mechanical enforcement: the numbers are authoritative. The LLM Coach
+            # advises, but it cannot approve a proposal that breaks a numeric
+            # constraint — and a hard breach aborts. Violations feed the Player's
+            # next revision.
+            mechanical = check_constraints(proposal, constraints, world_state)
+            if mechanical:
+                for v in mechanical:
+                    if v not in violations:
+                        violations.append(v)
+                if verdict == "APPROVE":
+                    verdict = "REJECT"
+                note = "Mechanical constraint violations: " + ", ".join(mechanical)
+                feedback = f"{feedback} | {note}" if feedback else note
+            if verdict != "APPROVE" and any(
+                v in constraints.abort_on_violations for v in violations
+            ):
+                verdict = "ABORT"
 
             reasoning_result: dict = {}
             if self._reasoning_evaluator is not None:
@@ -128,8 +149,8 @@ class CoachLoop:
                 "proposal": proposal,
                 "evaluation": {
                     "decision": verdict,
-                    "violations": coach_result["violations"],
-                    "feedback": coach_result["critique"],
+                    "violations": violations,
+                    "feedback": feedback,
                 },
                 "tokens_used": {
                     "player": player_result["tokens_used"]["player"],
@@ -140,7 +161,7 @@ class CoachLoop:
             })
             history.append({
                 "proposal": proposal,
-                "evaluation": {"feedback": coach_result.get("critique", "")},
+                "evaluation": {"feedback": feedback},
             })
 
             if verdict in ("APPROVE", "ABORT"):
