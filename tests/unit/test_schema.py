@@ -15,6 +15,7 @@ BASE = {
     "max_daily_loss_pct": 0.02,
     "consistency_rule_pct": 0.50,
     "trading_cutoff_time": "16:20",
+    "min_stop_atr_multiple": 1.5,
 }
 
 
@@ -40,6 +41,7 @@ def test_to_dict_expected_keys():
         "max_daily_loss_pct",
         "consistency_rule_pct",
         "trading_cutoff_time",
+        "min_stop_atr_multiple",
     }
     assert keys == expected
 
@@ -48,3 +50,10 @@ def test_max_rounds_defaults_to_3():
     without_rounds = {k: v for k, v in BASE.items() if k != "max_rounds"}
     schema = ConstraintSchema.from_dict(without_rounds)
     assert schema.max_rounds == 3
+
+
+def test_min_stop_atr_multiple_defaults_to_1_5():
+    # Old preset JSON without the F8 key must still load with the default.
+    without = {k: v for k, v in BASE.items() if k != "min_stop_atr_multiple"}
+    schema = ConstraintSchema.from_dict(without)
+    assert schema.min_stop_atr_multiple == 1.5

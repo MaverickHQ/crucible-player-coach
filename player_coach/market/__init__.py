@@ -1,5 +1,6 @@
 """Market layer: world-state model + market-feature pipeline (Seams 1 & 4)."""
 
+from player_coach.market.atr import ATRFeature, compute_atr
 from player_coach.market.enricher import MarketFeature, WorldStateEnricher
 from player_coach.market.garch_feature import GARCHFeature
 from player_coach.market.ohlcv import OHLCVBar, OHLCVBuffer
@@ -21,4 +22,6 @@ __all__ = [
     "RegimeFeature",
     "VolatilityModel",
     "GARCHFeature",
+    "compute_atr",
+    "ATRFeature",
 ]

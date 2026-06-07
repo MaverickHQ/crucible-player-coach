@@ -11,6 +11,7 @@ _OPTIONAL_DEFAULTS: dict[str, Any] = {
     "regime_label": "unknown",
     "regime_probability": 0.0,
     "garch_vol": None,
+    "atr": None,
     "position": None,
 }
 
@@ -43,6 +44,8 @@ class WorldState:
     regime_probability: float = 0.0
     # Feature 7: next-day GARCH(1,1) conditional vol forecast. None until enriched.
     garch_vol: float | None = None
+    # Feature 8: 14-day Wilder ATR. None until enriched.
+    atr: float | None = None
     position: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +66,7 @@ class WorldState:
         data["regime_label"] = self.regime_label
         data["regime_probability"] = self.regime_probability
         data["garch_vol"] = self.garch_vol
+        data["atr"] = self.atr
         data["session"] = self.session
         return data
 
@@ -88,5 +92,6 @@ class WorldState:
                 "regime_probability", _OPTIONAL_DEFAULTS["regime_probability"]
             ),
             garch_vol=data.get("garch_vol", _OPTIONAL_DEFAULTS["garch_vol"]),
+            atr=data.get("atr", _OPTIONAL_DEFAULTS["atr"]),
             position=data.get("position", _OPTIONAL_DEFAULTS["position"]),
         )

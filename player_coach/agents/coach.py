@@ -96,6 +96,9 @@ For entry actions (action_type is "enter_long" or "enter_short"):
 - max_open_positions: total number of entry actions must be <= constraints.max_open_positions
 - max_position_pct: sum of all entry size_pct must be <= constraints.max_position_pct
 - min_risk_reward: |take_profit - entry_price| / |entry_price - stop_loss| >= constraints.min_risk_reward
+- min_stop_atr_multiple: the stop must sit at least this many ATRs from entry —
+  |entry_price - stop_loss| >= constraints.min_stop_atr_multiple * world_state.atr.
+  Only check this when world_state.atr is present (non-null); if atr is null, skip it.
 
 For exit actions (action_type is "exit_position"):
 - position_id must be present (non-null)

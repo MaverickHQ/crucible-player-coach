@@ -160,6 +160,15 @@ def test_world_state_passed_to_loop_has_garch_vol_key(tmp_path: Path) -> None:
     assert "garch_vol" in loop.run.call_args.kwargs["world_state"]
 
 
+def test_world_state_carries_computed_atr(tmp_path: Path) -> None:
+    # 20 bars is enough for ATR (needs 15) but below the 30-return HMM/GARCH
+    # threshold, so this stays fast while proving ATRFeature is wired.
+    prices = [185.0 + i * 0.5 for i in range(20)]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    atr = loop.run.call_args.kwargs["world_state"]["atr"]
+    assert atr is not None and atr > 0.0
+
+
 class _FakeEnricher:
     """Writes a fixed regime + garch forecast so the resolver wiring is testable
     without fitting models on a long synthetic series."""

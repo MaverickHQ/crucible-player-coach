@@ -13,6 +13,7 @@ from player_coach.constraints.resolver import (
     regime_overlay,
 )
 from player_coach.market import (
+    ATRFeature,
     GARCHFeature,
     OHLCVBuffer,
     RegimeFeature,
@@ -74,7 +75,7 @@ class BacktestRunner:
         # F6 regime + F7 GARCH enrich world state; the resolver then layers the
         # regime overlay and (on top) garch volatility-scaling onto constraints.
         self._enricher = enricher or WorldStateEnricher(
-            [RegimeFeature(), GARCHFeature()]
+            [RegimeFeature(), GARCHFeature(), ATRFeature()]
         )
         self._resolver = resolver or ConstraintResolver(
             [regime_overlay(), garch_scale(), clamp_invariants()]
