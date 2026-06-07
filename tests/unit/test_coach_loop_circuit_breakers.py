@@ -119,7 +119,7 @@ def test_trading_cutoff_breach_returns_abort_with_no_rounds(tmp_path: Path) -> N
     loop = _make_loop(tmp_path)
     store = DatabaseStore(tmp_path / "test.db")
     with patch(
-        "player_coach.loop.coach_loop.is_trading_cutoff_reached",
+        "player_coach.loop.breaker_registry.is_trading_cutoff_reached",
         return_value=True,
     ):
         artifact = loop.run(

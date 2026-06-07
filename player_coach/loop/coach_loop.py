@@ -9,12 +9,7 @@ from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.checker import check_constraints
 from player_coach.constraints.schema import ConstraintSchema
 from player_coach.evaluators.reasoning_evaluator import ReasoningEvaluator
-from player_coach.loop.circuit_breakers import (
-    is_daily_loss_limit_breached,
-    is_consistency_rule_breached,
-    is_trading_cutoff_reached,
-    is_mll_breached,
-)
+from player_coach.loop.breaker_registry import BreakerRegistry
 from player_coach.patterns.pattern_reader import read_patterns
 from player_coach.patterns.pattern_writer import write_patterns
 
@@ -30,11 +25,13 @@ class CoachLoop:
         coach: CoachAgent,
         artifact_writer: ArtifactWriter,
         reasoning_evaluator: ReasoningEvaluator | None = None,
+        breakers: BreakerRegistry | None = None,
     ) -> None:
         self._player = player
         self._coach = coach
         self._writer = artifact_writer
         self._reasoning_evaluator = reasoning_evaluator
+        self._breakers = breakers or BreakerRegistry()
 
     def run(
         self,
@@ -55,32 +52,12 @@ class CoachLoop:
             world_state = {**world_state, **portfolio_state.to_dict()}
 
         if portfolio_state is not None:
-            # Circuit breaker check order (highest priority first):
-            # 1. MLL breached     — peak drawdown exceeded; account terminated, no further trading
-            # 2. Daily loss limit — today's loss too large; skip today, backtest continues
-            # 3. Consistency rule — today's gain too large vs cumulative; skip today
-            # 4. Trading cutoff   — market hours ended; skip today
-            if is_mll_breached(portfolio_state, constraints):
+            # Circuit breakers, highest priority first (registry, Seam 3):
+            # MLL (account terminated) → daily loss → consistency → cutoff.
+            breach = self._breakers.first_breach(portfolio_state, constraints)
+            if breach is not None:
                 return self._abort_artifact(
-                    "mll_breached", world_state, constraints,
-                    portfolio_state, strategy_id,
-                    db_store, writer, output_dir,
-                )
-            if is_daily_loss_limit_breached(portfolio_state, constraints):
-                return self._abort_artifact(
-                    "daily_loss_limit", world_state, constraints,
-                    portfolio_state, strategy_id,
-                    db_store, writer, output_dir,
-                )
-            if is_consistency_rule_breached(portfolio_state, constraints):
-                return self._abort_artifact(
-                    "consistency_rule", world_state, constraints,
-                    portfolio_state, strategy_id,
-                    db_store, writer, output_dir,
-                )
-            if is_trading_cutoff_reached(constraints):
-                return self._abort_artifact(
-                    "trading_cutoff", world_state, constraints,
+                    breach, world_state, constraints,
                     portfolio_state, strategy_id,
                     db_store, writer, output_dir,
                 )

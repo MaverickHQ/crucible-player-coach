@@ -22,6 +22,13 @@ class ConstraintSchema:
     # Feature 9: SOFT preference — prefer entries below VWAP. Advisory, not a
     # hard constraint; the Coach notes it but never rejects for it alone.
     prefer_entry_below_vwap: bool = True
+    # Feature 11: operational max drawdown, measured from peak equity (trailing).
+    # Defaults to max_drawdown_pct (its back-compat source) when not given.
+    trailing_max_drawdown_pct: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.trailing_max_drawdown_pct is None:
+            self.trailing_max_drawdown_pct = self.max_drawdown_pct
 
     def is_daily_loss_breached(
         self, daily_pnl: float, daily_starting_balance: float
@@ -54,6 +61,7 @@ class ConstraintSchema:
             trading_cutoff_time=data.get("trading_cutoff_time", "16:20"),
             min_stop_atr_multiple=data.get("min_stop_atr_multiple", 1.5),
             prefer_entry_below_vwap=data.get("prefer_entry_below_vwap", True),
+            trailing_max_drawdown_pct=data.get("trailing_max_drawdown_pct"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -72,4 +80,5 @@ class ConstraintSchema:
             "trading_cutoff_time": self.trading_cutoff_time,
             "min_stop_atr_multiple": self.min_stop_atr_multiple,
             "prefer_entry_below_vwap": self.prefer_entry_below_vwap,
+            "trailing_max_drawdown_pct": self.trailing_max_drawdown_pct,
         }

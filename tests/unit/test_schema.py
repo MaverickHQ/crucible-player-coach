@@ -17,6 +17,7 @@ BASE = {
     "trading_cutoff_time": "16:20",
     "min_stop_atr_multiple": 1.5,
     "prefer_entry_below_vwap": True,
+    "trailing_max_drawdown_pct": 0.10,
 }
 
 
@@ -44,6 +45,7 @@ def test_to_dict_expected_keys():
         "trading_cutoff_time",
         "min_stop_atr_multiple",
         "prefer_entry_below_vwap",
+        "trailing_max_drawdown_pct",
     }
     assert keys == expected
 
