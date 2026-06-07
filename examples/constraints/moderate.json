@@ -10,5 +10,7 @@
   "abort_on_violations": ["max_leverage", "max_drawdown_pct"],
   "max_daily_loss_pct": 0.02,
   "consistency_rule_pct": 0.50,
-  "trading_cutoff_time": "16:20"
+  "trading_cutoff_time": "16:20",
+  "min_stop_atr_multiple": 1.5,
+  "prefer_entry_below_vwap": true
 }

@@ -57,3 +57,26 @@ def test_empty_buffer_yields_empty_arrays():
     buf = OHLCVBuffer()
     assert len(buf.closes) == 0
     assert len(buf.log_returns()) == 0
+
+
+# ----------------------------------------------------- column caching (#10)
+
+def test_column_accessor_is_cached_between_appends():
+    buf = OHLCVBuffer()
+    _append_closes(buf, [100, 101, 102])
+    assert buf.closes is buf.closes  # same array object — not rebuilt each access
+
+
+def test_log_returns_is_cached_between_appends():
+    buf = OHLCVBuffer()
+    _append_closes(buf, [100, 110, 121])
+    assert buf.log_returns() is buf.log_returns()
+
+
+def test_append_invalidates_cache():
+    buf = OHLCVBuffer()
+    _append_closes(buf, [100, 101])
+    first = buf.closes
+    _append_closes(buf, [102])
+    assert buf.closes is not first
+    assert list(buf.closes) == [100, 101, 102]

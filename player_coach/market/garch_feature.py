@@ -38,9 +38,13 @@ class GARCHFeature:
         self._since_fit = 0
 
     def reset(self) -> None:
-        """Clear cached params (call between backtest runs)."""
+        """Clear cadence state and the underlying model's cached fit (call
+        between backtest runs)."""
         self._fitted = False
         self._since_fit = 0
+        model_reset = getattr(self._model, "reset", None)
+        if callable(model_reset):
+            model_reset()
 
     def compute(self, buffer: OHLCVBuffer) -> dict[str, Any]:
         returns = buffer.log_returns()
@@ -55,12 +59,15 @@ class GARCHFeature:
         try:
             # Re-estimate params only on cadence; forecast daily on the current
             # window using cached params (cheap GARCH filter, no optimisation).
-            if not self._fitted or self._since_fit >= self._refit_every:
+            if not self._fitted:
                 self._model.fit(window)
                 self._fitted = True
                 self._since_fit = 0
             else:
                 self._since_fit += 1
+                if self._since_fit >= self._refit_every:
+                    self._model.fit(window)
+                    self._since_fit = 0
             vol = self._model.forecast_vol_on(window)
         except Exception:
             logger.warning("GARCHFeature: fit failed; garch_vol=None", exc_info=True)

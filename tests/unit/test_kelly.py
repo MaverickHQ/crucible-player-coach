@@ -34,9 +34,15 @@ def test_no_trades_returns_zero():
     assert half_kelly(trade_stats([])) == 0.0
 
 
-def test_no_losses_returns_zero():
-    # avg_loss == 0 → payoff undefined → 0.0 (cannot size off wins alone)
-    assert half_kelly(_stats(1.0, 0.02, 0.0)) == 0.0
+def test_all_wins_uses_winrate_as_full_kelly():
+    # No losses → payoff unbounded → full Kelly -> win_rate; half = 0.5 * win_rate.
+    # (The old behavior returned 0.0 — wrong exactly when the record is best.)
+    assert half_kelly(_stats(1.0, 0.02, 0.0)) == 0.5
+    assert half_kelly(_stats(0.5, 0.02, 0.0)) == 0.25
+
+
+def test_all_wins_still_capped():
+    assert half_kelly(_stats(1.0, 0.02, 0.0), cap=0.05) == 0.05
 
 
 def test_is_half_of_full_kelly():

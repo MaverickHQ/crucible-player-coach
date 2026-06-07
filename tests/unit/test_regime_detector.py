@@ -128,6 +128,13 @@ def test_min_duration_one_switches_immediately():
     assert d.confirm_regime("high_vol") == "high_vol"
 
 
+def test_reset_clears_fitted_model():
+    d = RegimeDetector().fit(_two_regime_series(seed=9))
+    d.reset()
+    with pytest.raises(RuntimeError):
+        d.predict(_two_regime_series(seed=9))  # model gone, must not reuse stale fit
+
+
 # ------------------------------------------------------------- serialization
 
 def test_save_load_roundtrip_predicts_identically(tmp_path: Path):

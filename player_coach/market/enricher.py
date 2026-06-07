@@ -13,10 +13,15 @@ logger = logging.getLogger(__name__)
 class MarketFeature(Protocol):
     """A market-feature computation that contributes fields to the world state.
 
-    Each Phase 3A feature (F6 regime, F7 garch, F8 atr, F9 vwap, F10 kelly)
-    implements this and registers with the enricher. ``compute`` returns a dict
-    of ``{world_state_field: value}`` to write. The field must already exist on
+    The price-derived Phase 3A features (F6 regime, F7 garch, F8 atr, F9 vwap)
+    implement this and register with the enricher. ``compute`` returns a dict of
+    ``{world_state_field: value}`` to write. The field must already exist on
     ``WorldState`` (the feature adds it in the same change).
+
+    Note: F10 ``kelly_fraction`` is NOT an enricher feature — it derives from
+    realised trade returns and the resolved per-trade cap, which the
+    ``compute(buffer)`` protocol does not carry, so the runner computes it
+    separately after constraint resolution.
     """
 
     name: str

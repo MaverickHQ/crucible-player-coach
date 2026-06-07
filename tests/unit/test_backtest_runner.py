@@ -68,16 +68,27 @@ def _make_approve_artifact() -> dict:
     }
 
 
-def _action_artifact(action: dict) -> dict:
+def _multi_action_artifact(actions: list[dict]) -> dict:
     return {
         "outcome": "APPROVE",
         "run_id": "r",
         "rounds": [{
             "round": 1,
-            "proposal": {"actions": [action], "reasoning": ""},
+            "proposal": {"actions": actions, "reasoning": ""},
             "evaluation": {"decision": "APPROVE", "violations": [], "feedback": ""},
             "tokens_used": {"player": 1, "coach": 1},
         }],
+    }
+
+
+def _action_artifact(action: dict) -> dict:
+    return _multi_action_artifact([action])
+
+
+def _enter_no_id() -> dict:
+    return {
+        "action_type": "enter_long", "symbol": "AMZN", "size_pct": 0.02,
+        "entry_price": 185.0, "stop_loss": 183.0, "take_profit": 200.0,
     }
 
 
@@ -200,12 +211,45 @@ def test_world_state_carries_computed_atr(tmp_path: Path) -> None:
     assert atr is not None and atr > 0.0
 
 
+def test_sma_computed_from_buffer_closes(tmp_path: Path) -> None:
+    # SMA must stay correct after close_prices is folded into the OHLCV buffer.
+    prices = [10.0, 20.0, 30.0, 40.0, 50.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    ws = loop.run.call_args.kwargs["world_state"]  # last day
+    assert ws["sma5"] == 30.0   # mean(10,20,30,40,50)
+    assert ws["sma10"] == 50.0  # < 10 bars → falls back to the latest price
+
+
 def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
     ws = loop.run.call_args.kwargs["world_state"]
     assert ws["vwap"] is not None and ws["vwap"] > 0.0
     assert ws["price_vs_vwap"] is not None
+
+
+def test_exit_closes_only_one_of_duplicate_ids(tmp_path: Path) -> None:
+    # Two positions both id "P1" (day0, day1); a single exit "P1" (day2) must
+    # close exactly one, not both.
+    prices = [185.0, 185.0, 200.0]
+    arts = [_enter_artifact(), _enter_artifact(), _exit_artifact()]
+    _, _, db = _run_with_prices(
+        prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path
+    )
+    day2 = db.save_portfolio_snapshot.call_args_list[2][0][0]
+    assert len(day2["open_positions"]) == 1
+
+
+def test_same_day_duplicate_entries_get_unique_ids(tmp_path: Path) -> None:
+    # One day's proposal with two id-less long entries must yield two distinct
+    # synthesized position ids, not one collided id.
+    art = _multi_action_artifact([_enter_no_id(), _enter_no_id()])
+    _, _, db = _run_with_prices(
+        [185.0], artifact_factory=lambda i: art, tmp_path=tmp_path
+    )
+    ids = db.save_portfolio_snapshot.call_args_list[0][0][0]["open_positions"]
+    assert len(ids) == 2
+    assert len(set(ids)) == 2
 
 
 def test_kelly_reference_none_until_trade_closes_then_populated(tmp_path: Path) -> None:

@@ -14,5 +14,7 @@
   ],
   "max_daily_loss_pct": 0.01,
   "consistency_rule_pct": 0.40,
-  "trading_cutoff_time": "16:20"
+  "trading_cutoff_time": "16:20",
+  "min_stop_atr_multiple": 2.0,
+  "prefer_entry_below_vwap": true
 }

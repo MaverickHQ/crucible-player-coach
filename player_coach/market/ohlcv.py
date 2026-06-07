@@ -33,6 +33,10 @@ class OHLCVBuffer:
 
     def __init__(self, maxlen: int | None = None) -> None:
         self._bars: deque[OHLCVBar] = deque(maxlen=maxlen)
+        # Materialised columns / log returns, rebuilt lazily and invalidated on
+        # append. Avoids an O(n) deque->array rebuild on every accessor call
+        # (each feature reads several columns per bar — otherwise O(n^2) runs).
+        self._cache: dict[str, np.ndarray] = {}
 
     def append(
         self,
@@ -44,12 +48,17 @@ class OHLCVBuffer:
         volume: float,
     ) -> None:
         self._bars.append(OHLCVBar(open, high, low, close, volume))
+        self._cache.clear()
 
     def __len__(self) -> int:
         return len(self._bars)
 
     def _column(self, attr: str) -> np.ndarray:
-        return np.array([getattr(b, attr) for b in self._bars], dtype=float)
+        cached = self._cache.get(attr)
+        if cached is None:
+            cached = np.array([getattr(b, attr) for b in self._bars], dtype=float)
+            self._cache[attr] = cached
+        return cached
 
     @property
     def opens(self) -> np.ndarray:
@@ -72,5 +81,12 @@ class OHLCVBuffer:
         return self._column("volume")
 
     def log_returns(self) -> np.ndarray:
-        """Log returns of the close series (empty if fewer than 2 bars)."""
-        return compute_log_returns(self.closes)
+        """Log returns of the close series (empty if fewer than 2 bars).
+
+        Cached and shared across features (regime + garch both read it per bar).
+        """
+        cached = self._cache.get("_log_returns")
+        if cached is None:
+            cached = compute_log_returns(self.closes)
+            self._cache["_log_returns"] = cached
+        return cached

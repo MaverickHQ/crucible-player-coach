@@ -114,6 +114,17 @@ def test_insufficient_data_does_not_fit():
     assert det.fit_calls == 0
 
 
+def test_refit_interval_is_exactly_refit_every():
+    # refit_every=2 over 5 calls must refit at calls 1, 3, 5 → 3 fits.
+    # The off-by-one bug refits at 1, 4 → only 2.
+    det = _CountingDetector()
+    feature = RegimeFeature(detector=det, refit_every=2)
+    buf = _fill_buffer(120)
+    for _ in range(5):
+        feature.compute(buf)
+    assert det.fit_calls == 3
+
+
 # ----------------------------------------------- persistence wiring (#2)
 
 class _SmoothingSpyDetector:

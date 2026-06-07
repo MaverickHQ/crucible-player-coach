@@ -130,7 +130,10 @@ class RegimeDetector:
     # ----------------------------------------------------- persistence smoothing
 
     def reset(self) -> None:
-        """Clear persistence-smoothing state (not the fitted model)."""
+        """Clear the fitted model and persistence-smoothing state, so a reused
+        detector cannot leak a prior run's fit or regime into the next run."""
+        self._model = None
+        self._rank_of_state = {}
         self._confirmed_label = None
         self._pending_label = None
         self._pending_count = 0

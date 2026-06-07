@@ -56,10 +56,13 @@ class _RunnerPosition:
     prev_close: float = 0.0
 
 
-def _compute_sma(prices: list[float], n: int) -> float:
-    if len(prices) < n:
-        return prices[-1] if prices else 0.0
-    return sum(prices[-n:]) / n
+def _compute_sma(prices, n: int) -> float:
+    length = len(prices)
+    if length == 0:
+        return 0.0
+    if length < n:
+        return float(prices[-1])
+    return float(sum(prices[-n:]) / n)
 
 
 class BacktestRunner:
@@ -110,8 +113,8 @@ class BacktestRunner:
         days_run = 0
         days_aborted = 0
         exchanges: list[dict] = []
-        close_prices: list[float] = []
         realized_trade_returns: list[float] = []
+        position_seq = 0
         buffer = OHLCVBuffer()
 
         for date, row in df.iterrows():
@@ -119,7 +122,6 @@ class BacktestRunner:
             high = float(row["High"])
             low = float(row["Low"])
             volume = int(row["Volume"])
-            close_prices.append(close)
             buffer.append(
                 open=float(row["Open"]),
                 high=high,
@@ -127,6 +129,7 @@ class BacktestRunner:
                 close=close,
                 volume=volume,
             )
+            closes = buffer.closes
 
             daily_pnl = sum(
                 (close - p.prev_close) / p.prev_close * p.cost if p.prev_close else 0.0
@@ -145,8 +148,8 @@ class BacktestRunner:
             world_state_obj = WorldState(
                 symbol=symbol,
                 price=close,
-                sma5=_compute_sma(close_prices, 5),
-                sma10=_compute_sma(close_prices, 10),
+                sma5=_compute_sma(closes, 5),
+                sma10=_compute_sma(closes, 10),
                 volume=volume,
             )
             # F6: write regime_label/regime_probability, then resolve the
@@ -186,7 +189,14 @@ class BacktestRunner:
                         size_pct = float(action.get("size_pct", 0.0))
                         entry_price = float(action.get("entry_price", close))
                         cost = capital * size_pct
-                        pid = action.get("position_id") or f"{symbol}-{date}-long"
+                        # Unique synthesized id so two id-less same-day entries
+                        # are distinguishable (a shared id would let one exit
+                        # close both).
+                        pid = (
+                            action.get("position_id")
+                            or f"{symbol}-{date}-{position_seq}-long"
+                        )
+                        position_seq += 1
                         open_positions.append(
                             _RunnerPosition(
                                 symbol=symbol,
@@ -200,17 +210,18 @@ class BacktestRunner:
                         cash_available -= cost
                     elif action_type == "exit_position":
                         pid = action.get("position_id")
-                        remaining = []
-                        for pos in open_positions:
+                        if pid is None:
+                            continue  # nothing identifiable to close
+                        # An exit closes exactly one position — the first match.
+                        for i, pos in enumerate(open_positions):
                             if pos.position_id == pid:
                                 proceeds = pos.cost * (close / pos.entry_price)
                                 cash_available += proceeds
                                 realized_trade_returns.append(
                                     close / pos.entry_price - 1.0
                                 )
-                            else:
-                                remaining.append(pos)
-                        open_positions = remaining
+                                del open_positions[i]
+                                break
 
             position_value = sum(
                 p.cost * (close / p.entry_price) for p in open_positions

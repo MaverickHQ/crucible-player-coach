@@ -83,8 +83,39 @@ def test_garch_refits_on_cadence_but_forecasts_daily():
     buf = _fill_buffer(160)
     for _ in range(25):
         feature.compute(buf)
-    assert model.fit_calls == 2       # refit at call 1 and 22
+    assert model.fit_calls == 2       # refit at call 1 and 21
     assert model.forecast_calls == 25  # fresh forecast every day
+
+
+def test_garch_refit_interval_is_exactly_refit_every():
+    # refit_every=2 over 5 calls → fits at 1, 3, 5 = 3 (off-by-one bug gives 2).
+    model = _CountingModel()
+    feature = GARCHFeature(model=model, refit_every=2)
+    buf = _fill_buffer(160)
+    for _ in range(5):
+        feature.compute(buf)
+    assert model.fit_calls == 3
+
+
+class _ResetSpyModel:
+    def __init__(self) -> None:
+        self.reset_called = False
+
+    def fit(self, returns):
+        return self
+
+    def forecast_vol_on(self, returns):
+        return 0.01
+
+    def reset(self):
+        self.reset_called = True
+
+
+def test_reset_propagates_to_underlying_model():
+    model = _ResetSpyModel()
+    feature = GARCHFeature(model=model)
+    feature.reset()
+    assert model.reset_called
 
 
 # ------------------------------------------------------------ enricher wiring

@@ -71,3 +71,10 @@ def test_forecast_vol_on_uses_cached_params():
 def test_forecast_vol_on_before_fit_raises():
     with pytest.raises(RuntimeError):
         VolatilityModel().forecast_vol_on(_calm(n=60))
+
+
+def test_reset_clears_cached_params():
+    model = VolatilityModel().fit(_calm(seed=20))
+    model.reset()
+    with pytest.raises(RuntimeError):
+        model.forecast_vol_on(_calm(n=60, seed=21))  # params gone, no stale reuse

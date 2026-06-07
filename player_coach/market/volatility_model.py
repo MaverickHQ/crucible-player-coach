@@ -70,3 +70,9 @@ class VolatilityModel:
     def fit_forecast(self, returns: np.ndarray) -> float:
         """Convenience: fit then forecast on the same series."""
         return self.fit(returns).forecast_vol()
+
+    def reset(self) -> None:
+        """Drop the cached fit so a reused model cannot apply a prior run's
+        params to a new series."""
+        self._result = None
+        self._params = None

@@ -54,12 +54,15 @@ class RegimeFeature:
         try:
             # Refit the HMM only on cadence (10 restarts is expensive); predict
             # every day on the cached model with the current window.
-            if not self._fitted or self._since_fit >= self._refit_every:
+            if not self._fitted:
                 self._detector.fit(window)
                 self._fitted = True
                 self._since_fit = 0
             else:
                 self._since_fit += 1
+                if self._since_fit >= self._refit_every:
+                    self._detector.fit(window)
+                    self._since_fit = 0
             label, probability = self._detector.predict(window)
         except Exception:
             logger.warning("RegimeFeature: HMM fit failed; regime=unknown",
