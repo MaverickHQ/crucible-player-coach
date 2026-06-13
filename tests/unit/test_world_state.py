@@ -89,6 +89,19 @@ def test_to_dict_from_dict_round_trips():
     assert WorldState.from_dict(ws.to_dict()) == ws
 
 
+def test_round_trips_every_field():
+    # Guards the dataclasses.fields()-driven serialisation against drift as new
+    # fields are added.
+    ws = WorldState(
+        symbol="X", price=1.0, sma5=1.0, sma10=1.0, volume=1,
+        session="LDN", regime_label="high_vol", regime_probability=0.7,
+        garch_vol=0.02, atr=1.5, vwap=100.0, price_vs_vwap=-0.1,
+        kelly_fraction=0.03, challenge_phase="lock_in", challenge_pnl_pct=0.06,
+        consistency_status="approaching", mc_success_prob=0.3, position="long",
+    )
+    assert WorldState.from_dict(ws.to_dict()) == ws
+
+
 def test_from_dict_ignores_unknown_keys():
     # The coach loop merges portfolio fields into the prompt dict; from_dict
     # must tolerate keys it does not model rather than raising.
