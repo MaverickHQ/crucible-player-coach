@@ -154,6 +154,13 @@ def test_run_records_portfolio_snapshot_per_day(tmp_path: Path) -> None:
     assert db_store.save_portfolio_snapshot.call_count == len(prices)
 
 
+def test_backtest_result_has_equity_curve(tmp_path: Path) -> None:
+    prices = [185.0, 186.0, 187.0]
+    result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    assert len(result.equity_curve) == result.days_run
+    assert result.equity_curve[-1][1] == result.final_capital
+
+
 def test_backtest_result_has_correct_days_run(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0, 188.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)

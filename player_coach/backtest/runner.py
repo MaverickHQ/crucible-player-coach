@@ -51,6 +51,8 @@ class BacktestResult:
     total_pnl_pct: float
     max_drawdown_pct: float
     exchanges: list[dict] = field(default_factory=list)
+    # Seam 5: per-day (date, capital) — the basis for risk/drawdown metrics.
+    equity_curve: list[tuple[str, float]] = field(default_factory=list)
 
 
 @dataclass
@@ -166,6 +168,7 @@ class BacktestRunner:
         realized_trade_returns: list[float] = []
         position_seq = 0
         buffer = OHLCVBuffer()
+        equity_curve: list[tuple[str, float]] = []
         total_days = len(df)
         mc_prob: float | None = None
 
@@ -306,6 +309,7 @@ class BacktestRunner:
             peak_capital = max(peak_capital, capital)
             cumulative_pnl = capital - initial_capital
             daily_starting_balance = capital
+            equity_curve.append((str(date)[:10], capital))
             for p in open_positions:
                 p.prev_close = close
 
@@ -351,4 +355,5 @@ class BacktestRunner:
             total_pnl_pct=total_pnl_pct,
             max_drawdown_pct=max_drawdown_pct,
             exchanges=exchanges,
+            equity_curve=equity_curve,
         )
