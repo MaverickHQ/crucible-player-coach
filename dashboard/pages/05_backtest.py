@@ -84,6 +84,51 @@ def _render_record(rec: dict) -> None:
 # Sidebar
 # ---------------------------------------------------------------------------
 
+def _render_metrics_panel(m: dict) -> None:
+    """Render the Phase 4A evaluation metrics + regime breakdown for both runs."""
+    st.markdown("**Risk-adjusted metrics**")
+    for col, label, key in zip(
+        st.columns(2), (m["label_a"], m["label_b"]), ("a", "b")
+    ):
+        with col:
+            st.caption(label)
+            mm = m[key]
+            st.metric("P(pass)", f"{mm['mc_success_prob']:.0%}")
+            st.metric("Sharpe", f"{mm['sharpe']:.2f}")
+            st.metric("Sortino", f"{mm['sortino']:.2f}")
+            st.metric("Calmar", f"{mm['calmar']:.2f}")
+            st.metric("Max DD", f"{mm['max_drawdown']:.1%}")
+            st.caption(
+                f"DD duration {mm['max_drawdown_duration']}d · "
+                f"avg recovery {mm['avg_recovery_time']:.1f}d"
+            )
+    st.markdown("**Walk-forward** (out-of-sample, 60/30 anchored)")
+    for col, label, key in zip(
+        st.columns(2), (m["label_a"], m["label_b"]), ("wf_a", "wf_b")
+    ):
+        with col:
+            wf = m.get(key, {"oos_sharpe": 0.0, "folds": 0})
+            st.caption(label)
+            st.metric("OOS Sharpe", f"{wf['oos_sharpe']:.2f}",
+                      help=f"{wf['folds']} fold(s)")
+
+    st.markdown("**Regime breakdown** (count · approve rate)")
+    for col, label, key in zip(
+        st.columns(2), (m["label_a"], m["label_b"]), ("regime_a", "regime_b")
+    ):
+        with col:
+            st.caption(label)
+            breakdown = m[key]
+            if breakdown:
+                st.table([
+                    {"regime": r, "count": d["count"],
+                     "approve": f"{d['approve_rate']:.0%}"}
+                    for r, d in breakdown.items()
+                ])
+            else:
+                st.caption("no exchanges")
+
+
 with st.sidebar:
     st.header("Backtest Parameters")
     preset_names = list(_PRESETS)
@@ -199,6 +244,22 @@ if run_clicked:
         }
         store.save_backtest_result(record)
         st.session_state["last_backtest"] = record
+
+        from player_coach.backtest.reporting import (
+            backtest_metrics,
+            regime_breakdown,
+            walk_forward_report,
+        )
+        st.session_state["last_metrics"] = {
+            "label_a": preset_a,
+            "label_b": preset_b,
+            "a": backtest_metrics(result_a),
+            "b": backtest_metrics(result_b),
+            "regime_a": regime_breakdown(result_a),
+            "regime_b": regime_breakdown(result_b),
+            "wf_a": walk_forward_report(result_a.equity_curve, 60, 30),
+            "wf_b": walk_forward_report(result_b.equity_curve, 60, 30),
+        }
         st.success(comparison.summary)
 
 # ---------------------------------------------------------------------------
@@ -209,6 +270,9 @@ _last = st.session_state.get("last_backtest")
 if _last:
     st.subheader("Latest results")
     _render_record(_last)
+    _metrics = st.session_state.get("last_metrics")
+    if _metrics:
+        _render_metrics_panel(_metrics)
 
 # ---------------------------------------------------------------------------
 # History

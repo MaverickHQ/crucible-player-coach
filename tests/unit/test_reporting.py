@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from player_coach.backtest.reporting import (
+    backtest_metrics,
+    regime_breakdown,
+    walk_forward_report,
+)
+from player_coach.backtest.runner import BacktestResult
+
+
+def _result(**over) -> BacktestResult:
+    base = dict(
+        symbol="AMZN", start_date="2024-01-01", end_date="2024-02-01",
+        strategy_id="s", days_run=20, days_aborted=0, total_exchanges=20,
+        final_capital=106_000.0, total_pnl=6_000.0, total_pnl_pct=0.06,
+        max_drawdown_pct=0.04,
+    )
+    base.update(over)
+    return BacktestResult(**base)
+
+
+def test_backtest_metrics_surfaces_all_evaluation_fields():
+    r = _result(sharpe=1.5, sortino=2.1, calmar=1.2, max_drawdown_duration=7,
+                avg_recovery_time=3.5, mc_success_prob=0.55)
+    m = backtest_metrics(r)
+    assert m["total_return"] == 0.06
+    assert m["max_drawdown"] == 0.04
+    assert m["sharpe"] == 1.5
+    assert m["sortino"] == 2.1
+    assert m["calmar"] == 1.2
+    assert m["max_drawdown_duration"] == 7
+    assert m["avg_recovery_time"] == 3.5
+    assert m["mc_success_prob"] == 0.55
+
+
+def test_regime_breakdown_groups_result_exchanges():
+    exchanges = [
+        {"world_state": {"regime_label": "low_vol"}, "outcome": "APPROVE"},
+        {"world_state": {"regime_label": "high_vol"}, "outcome": "REJECT-MAX"},
+    ]
+    b = regime_breakdown(_result(exchanges=exchanges))
+    assert b["low_vol"]["count"] == 1
+    assert b["low_vol"]["approve_rate"] == 1.0
+    assert b["high_vol"]["approve_rate"] == 0.0
+
+
+def test_regime_breakdown_empty_for_no_exchanges():
+    assert regime_breakdown(_result()) == {}
+
+
+def test_walk_forward_report_counts_folds_and_oos_sharpe():
+    curve = [("d", float(100 + i)) for i in range(150)]  # rising
+    rep = walk_forward_report(curve, fit_days=60, eval_days=30)
+    assert rep["folds"] == 3
+    assert rep["oos_sharpe"] > 0  # out-of-sample returns are all positive
+
+
+def test_walk_forward_report_zero_folds_when_too_short():
+    rep = walk_forward_report([("d", 100.0)] * 50, fit_days=60, eval_days=30)
+    assert rep["folds"] == 0
+    assert rep["oos_sharpe"] == 0.0
