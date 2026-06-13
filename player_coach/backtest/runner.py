@@ -12,6 +12,11 @@ from player_coach.analytics import (
     simulate_challenge,
     trade_stats,
 )
+from player_coach.backtest.metrics import (
+    calmar_ratio,
+    sharpe_ratio,
+    sortino_ratio,
+)
 from player_coach.constraints.phase_profiles import challenge_phase
 from player_coach.constraints.resolver import (
     ConstraintResolver,
@@ -53,6 +58,10 @@ class BacktestResult:
     exchanges: list[dict] = field(default_factory=list)
     # Seam 5: per-day (date, capital) — the basis for risk/drawdown metrics.
     equity_curve: list[tuple[str, float]] = field(default_factory=list)
+    # Feature 17: risk-adjusted return metrics computed from the equity curve.
+    sharpe: float = 0.0
+    sortino: float = 0.0
+    calmar: float = 0.0
 
 
 @dataclass
@@ -363,4 +372,7 @@ class BacktestRunner:
             max_drawdown_pct=max_drawdown_pct,
             exchanges=exchanges,
             equity_curve=equity_curve,
+            sharpe=sharpe_ratio(equity_curve),
+            sortino=sortino_ratio(equity_curve),
+            calmar=calmar_ratio(equity_curve),
         )

@@ -161,6 +161,16 @@ def test_backtest_result_has_equity_curve(tmp_path: Path) -> None:
     assert result.equity_curve[-1][1] == result.final_capital
 
 
+def test_backtest_result_has_risk_metrics(tmp_path: Path) -> None:
+    from player_coach.backtest.metrics import (
+        calmar_ratio, sharpe_ratio, sortino_ratio,
+    )
+    result, _, _ = _run_with_prices([100.0, 110.0, 105.0, 115.0], tmp_path=tmp_path)
+    assert result.sharpe == sharpe_ratio(result.equity_curve)
+    assert result.sortino == sortino_ratio(result.equity_curve)
+    assert result.calmar == calmar_ratio(result.equity_curve)
+
+
 def test_backtest_result_has_correct_days_run(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0, 188.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)
