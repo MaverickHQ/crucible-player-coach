@@ -113,6 +113,7 @@ class BacktestRunner:
         strategy_id: str,
         enricher: WorldStateEnricher | None = None,
         resolver: ConstraintResolver | None = None,
+        transaction_cost_pct: float = 0.001,
         profit_target: float = 0.06,
         mc_min_trades: int = 10,
         mc_every: int = 20,
@@ -122,6 +123,8 @@ class BacktestRunner:
         self._loop = loop
         self._db_store = db_store
         self._strategy_id = strategy_id
+        # F16: round-trip transaction cost, charged half on entry, half on exit.
+        self._transaction_cost_pct = transaction_cost_pct
         # F14: Monte Carlo P(pass) is recomputed on a cadence (not every bar) once
         # enough trades have closed; it feeds the auto-conservation trigger.
         self._profit_target = profit_target
@@ -290,6 +293,7 @@ class BacktestRunner:
                             )
                         )
                         cash_available -= cost
+                        cash_available -= cost * self._transaction_cost_pct / 2.0
                     elif action_type == "exit_position":
                         pid = action.get("position_id")
                         if pid is None:
@@ -298,6 +302,9 @@ class BacktestRunner:
                         for i, pos in enumerate(open_positions):
                             if pos.position_id == pid:
                                 cash_available += pos.value(close)
+                                cash_available -= (
+                                    pos.cost * self._transaction_cost_pct / 2.0
+                                )
                                 realized_trade_returns.append(
                                     pos.realized_return(close)
                                 )

@@ -238,9 +238,9 @@ def test_world_state_carries_challenge_phase(tmp_path: Path) -> None:
 
 
 def test_default_resolver_tightens_on_phase_transition(tmp_path: Path) -> None:
-    # Enter @185 day 0; price jumps to 333 → ~4% account gain → conservation by
-    # day 2, which must resolve to a tighter per-trade limit than day 0.
-    prices = [185.0, 333.0, 333.0]
+    # Enter @185 day 0; price jumps → >4% account gain (with F16 costs) →
+    # conservation by day 2, which resolves tighter than day 0.
+    prices = [185.0, 340.0, 340.0]
     arts = [_enter_artifact(), _hold_artifact(), _hold_artifact()]
     _, loop, _ = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
@@ -302,6 +302,29 @@ def test_monte_carlo_sets_prob_and_triggers_conservation(tmp_path: Path) -> None
     day3 = loop.run.call_args_list[3].kwargs["world_state"]
     assert day3["mc_success_prob"] == 0.0
     assert day3["challenge_phase"] == "conservation"
+
+
+def _run_costs(cost_pct: float, tmp_path: Path):
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_at(100.0), _exit_artifact()]
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s",
+        transaction_cost_pct=cost_pct,
+    )
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df([100.0, 100.0])
+        return runner.run(symbol="AMZN", start_date="2024-01-02",
+                          end_date="2024-01-15", constraints=_make_constraints(),
+                          output_dir=tmp_path)
+
+
+def test_transaction_costs_reduce_pnl(tmp_path: Path) -> None:
+    # Flat round trip (enter @100, exit @100): only the fee is lost.
+    assert _run_costs(0.01, tmp_path).total_pnl < 0
+
+
+def test_zero_transaction_cost_leaves_flat_trade_flat(tmp_path: Path) -> None:
+    assert _run_costs(0.0, tmp_path).total_pnl == 0.0
 
 
 def test_winning_short_increases_pnl(tmp_path: Path) -> None:
