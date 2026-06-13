@@ -3,3 +3,8 @@ anthropic>=0.49.0
 yfinance
 requests
 ewm-core
+# Phase 3A market layer + analytics (kept in sync with pyproject [market]).
+numpy>=1.24
+pandas
+hmmlearn>=0.3.0
+arch>=6.0
