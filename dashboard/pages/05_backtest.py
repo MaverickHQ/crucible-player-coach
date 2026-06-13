@@ -183,37 +183,40 @@ if run_clicked:
                 artifact_writer=ArtifactWriter("artifacts"),
             )
 
-        with st.spinner(f"Running {preset_a} backtest…"):
+        from player_coach.backtest.reporting import format_progress_status
+
+        def _run_with_progress(label: str, strategy_id: str, constraints):
+            st.markdown(f"**{label}**")
+            bar = st.progress(0.0)
+            status = st.empty()
+            chart_slot = st.empty()
+            equity: list[float] = []
+
+            def _on_day(payload):
+                bar.progress(payload["day"] / max(1, payload["total_days"]))
+                status.caption(format_progress_status(payload))
+                equity.append(payload["capital"])
+                if len(equity) >= 2:
+                    chart_slot.line_chart(equity, height=120)
+
             try:
-                result_a = BacktestRunner(
+                return BacktestRunner(
                     loop=_make_loop(api_key),
                     db_store=store,
-                    strategy_id=strategy_id_a,
+                    strategy_id=strategy_id,
+                    on_day=_on_day,
                 ).run(
                     symbol=symbol,
                     start_date=str(start_date),
                     end_date=str(end_date),
-                    constraints=constraints_a,
+                    constraints=constraints,
                 )
             except Exception as exc:
-                st.error(f"Backtest A failed: {exc}")
+                st.error(f"Backtest {label} failed: {exc}")
                 st.stop()
 
-        with st.spinner(f"Running {preset_b} backtest…"):
-            try:
-                result_b = BacktestRunner(
-                    loop=_make_loop(api_key),
-                    db_store=store,
-                    strategy_id=strategy_id_b,
-                ).run(
-                    symbol=symbol,
-                    start_date=str(start_date),
-                    end_date=str(end_date),
-                    constraints=constraints_b,
-                )
-            except Exception as exc:
-                st.error(f"Backtest B failed: {exc}")
-                st.stop()
+        result_a = _run_with_progress(preset_a, strategy_id_a, constraints_a)
+        result_b = _run_with_progress(preset_b, strategy_id_b, constraints_b)
 
         run_ids_a = [e["run_id"] for e in result_a.exchanges]
         run_ids_b = [e["run_id"] for e in result_b.exchanges]

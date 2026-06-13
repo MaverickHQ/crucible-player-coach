@@ -154,6 +154,54 @@ def test_run_records_portfolio_snapshot_per_day(tmp_path: Path) -> None:
     assert db_store.save_portfolio_snapshot.call_count == len(prices)
 
 
+def test_on_day_callback_invoked_per_day(tmp_path: Path) -> None:
+    # Live progress: the callback fires exactly once per bar with a payload that
+    # carries enough to update a Streamlit status line.
+    calls: list[dict] = []
+    loop = MagicMock()
+    loop.run.return_value = _hold_artifact()
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s",
+        on_day=lambda payload: calls.append(payload),
+    )
+    df = _make_price_df([100.0, 101.0, 102.0])
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = df
+        runner.run(symbol="AMZN", start_date="2024-01-02",
+                   end_date="2024-01-15", constraints=_make_constraints(),
+                   output_dir=tmp_path)
+    assert len(calls) == 3
+    p = calls[0]
+    for key in ("day", "total_days", "date", "capital",
+                "challenge_phase", "outcome", "days_aborted"):
+        assert key in p, f"missing key in progress payload: {key}"
+    assert calls[0]["day"] == 1 and calls[-1]["day"] == 3
+    assert calls[-1]["total_days"] == 3
+
+
+def test_on_day_callback_optional(tmp_path: Path) -> None:
+    # No callback = no regression: the runner must still run cleanly.
+    _, loop, _ = _run_with_prices([100.0, 101.0], tmp_path=tmp_path)
+    assert loop.run.call_count == 2
+
+
+def test_on_day_callback_failure_swallowed(tmp_path: Path) -> None:
+    # A subscriber that raises must NOT derail the backtest.
+    def boom(_payload):
+        raise RuntimeError("ui blew up")
+    loop = MagicMock()
+    loop.run.return_value = _hold_artifact()
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s", on_day=boom)
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df(
+            [100.0, 101.0, 102.0])
+        result = runner.run(symbol="AMZN", start_date="2024-01-02",
+                            end_date="2024-01-15",
+                            constraints=_make_constraints(), output_dir=tmp_path)
+    assert result.days_run == 3  # ran to completion despite the boom
+
+
 def test_backtest_result_has_equity_curve(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)

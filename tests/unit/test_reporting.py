@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from player_coach.backtest.reporting import (
     backtest_metrics,
+    format_progress_status,
     regime_breakdown,
     walk_forward_report,
 )
@@ -59,3 +60,36 @@ def test_walk_forward_report_zero_folds_when_too_short():
     rep = walk_forward_report([("d", 100.0)] * 50, fit_days=60, eval_days=30)
     assert rep["folds"] == 0
     assert rep["oos_sharpe"] == 0.0
+
+
+# ---------------------------------------------------------------- progress
+
+def _payload(**over) -> dict:
+    base = dict(
+        day=7, total_days=20, date="2024-01-10", capital=102_500.0,
+        daily_pnl=125.0, challenge_phase="building", outcome="APPROVE",
+        termination_reason=None, days_aborted=1, mc_success_prob=0.62,
+    )
+    base.update(over); return base
+
+
+def test_progress_status_contains_key_fields():
+    s = format_progress_status(_payload())
+    assert "Day 7/20" in s
+    assert "2024-01-10" in s
+    assert "$102,500" in s
+    assert "building" in s
+    assert "1 abort" in s
+
+
+def test_progress_status_reports_abort_reason():
+    s = format_progress_status(_payload(outcome="ABORT",
+                                       termination_reason="mll_breached"))
+    assert "abort" in s.lower()
+    assert "mll_breached" in s
+
+
+def test_progress_status_handles_missing_mc_prob():
+    s = format_progress_status(_payload(mc_success_prob=None))
+    # No KeyError, no None leaking into the string.
+    assert "None" not in s

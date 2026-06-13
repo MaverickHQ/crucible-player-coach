@@ -35,6 +35,34 @@ def regime_breakdown(result: BacktestResult) -> dict[str, dict[str, Any]]:
     return decompose_by_regime(result.exchanges)
 
 
+def format_progress_status(payload: dict[str, Any]) -> str:
+    """Render a one-line status from a runner ``on_day`` callback payload.
+
+    Used by the dashboard's live progress panel; living here keeps it unit-tested
+    so the Streamlit page stays a thin renderer.
+    """
+    day = payload.get("day")
+    total = payload.get("total_days")
+    date = payload.get("date") or ""
+    capital = payload.get("capital", 0.0)
+    phase = payload.get("challenge_phase") or "—"
+    outcome = (payload.get("outcome") or "—").upper()
+    reason = payload.get("termination_reason")
+    aborts = int(payload.get("days_aborted", 0) or 0)
+    mc = payload.get("mc_success_prob")
+    parts = [
+        f"Day {day}/{total}",
+        date,
+        f"${capital:,.0f}",
+        f"phase {phase}",
+        f"verdict {outcome}" + (f"·{reason}" if outcome == "ABORT" and reason else ""),
+        f"{aborts} abort{'s' if aborts != 1 else ''}",
+    ]
+    if mc is not None:
+        parts.append(f"P(pass) {mc:.0%}")
+    return " · ".join(parts)
+
+
 def walk_forward_report(
     equity_curve: EquityCurve, fit_days: int, eval_days: int
 ) -> dict[str, Any]:

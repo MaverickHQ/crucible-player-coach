@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import yfinance as yf
 
@@ -138,6 +138,7 @@ class BacktestRunner:
         mc_paths: int = 1_000,
         mc_trades_per_day: float = 1.0,
         mc_eval_horizon: int = 20,
+        on_day: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._loop = loop
         self._db_store = db_store
@@ -152,6 +153,10 @@ class BacktestRunner:
         self._mc_paths = mc_paths
         self._mc_trades_per_day = mc_trades_per_day
         self._mc_eval_horizon = mc_eval_horizon
+        # Optional per-day progress callback for live dashboards (Streamlit).
+        # Called once per bar, after the day's accounting; never raises into the
+        # loop so a bad subscriber can't kill a long run.
+        self._on_day = on_day
         # F6 regime + F7 GARCH enrich world state; the resolver then layers the
         # regime overlay and (on top) garch volatility-scaling onto constraints.
         self._enricher = enricher or WorldStateEnricher(
@@ -354,6 +359,26 @@ class BacktestRunner:
 
             if outcome == "ABORT" and termination_reason != "trading_cutoff":
                 days_aborted += 1
+
+            # Live progress: fire AFTER accounting but BEFORE any break/continue
+            # short-circuit so abort days are reported too. A subscriber raising
+            # is swallowed; we never let a UI bug derail a long backtest.
+            if self._on_day is not None:
+                try:
+                    self._on_day({
+                        "day": day_index + 1,
+                        "total_days": total_days,
+                        "date": str(date)[:10],
+                        "capital": capital,
+                        "daily_pnl": daily_pnl,
+                        "challenge_phase": phase,
+                        "outcome": outcome,
+                        "termination_reason": termination_reason,
+                        "days_aborted": days_aborted,
+                        "mc_success_prob": mc_prob,
+                    })
+                except Exception:
+                    pass
 
             if outcome == "ABORT" and termination_reason == "mll_breached":
                 break
