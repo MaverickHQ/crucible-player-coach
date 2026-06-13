@@ -56,6 +56,18 @@ def test_no_losses_does_not_inflate_probability():
     assert r.success_probability == 0.0
 
 
+def test_guaranteed_win_is_certain():
+    # R8 semantics guard: every trade clears the target on step 1 → all succeed.
+    r = simulate_challenge(_stats(1.0, 0.10, 0.01), 0.06, 0.20, 20, 1, n_paths=200)
+    assert r.success_probability == 1.0
+
+
+def test_guaranteed_loss_is_zero():
+    # Every trade breaches the drawdown limit on step 1 → none succeed.
+    r = simulate_challenge(_stats(0.0, 0.01, 0.10), 0.06, 0.05, 20, 1, n_paths=200)
+    assert r.success_probability == 0.0
+
+
 def test_expired_challenge_returns_zero():
     # R3: no trades remaining → cannot pass. Must not floor to one trade.
     assert simulate_challenge(

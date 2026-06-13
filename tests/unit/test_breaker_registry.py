@@ -58,6 +58,15 @@ def test_register_custom_breaker_fires_by_priority():
     assert reg.first_breach(_portfolio(), _constraints()) == "custom"
 
 
+def test_equal_priority_resolves_by_insertion_order():
+    # R11: a tie on priority is broken by registration order (stable sort).
+    reg = BreakerRegistry([
+        CircuitBreaker("first", 5, lambda p, c: True),
+        CircuitBreaker("second", 5, lambda p, c: True),
+    ])
+    assert reg.first_breach(_portfolio(), _constraints()) == "first"
+
+
 def test_custom_low_priority_breaker_runs_after_defaults():
     reg = BreakerRegistry()
     reg.register(CircuitBreaker("never_first", 99, lambda p, c: True))

@@ -13,6 +13,19 @@ class TradeStats:
     win_rate: float
     avg_win: float
     avg_loss: float
+    n_wins: int = 0
+    n_losses: int = 0
+
+    @property
+    def decisive_win_rate(self) -> float:
+        """Win rate among *decisive* (non-scratch) trades — wins / (wins+losses).
+
+        This is the Bernoulli win probability Monte Carlo should use: scratch
+        (zero-return) trades shouldn't deflate the modelled win odds. Falls back
+        to ``win_rate`` when the win/loss counts are unavailable.
+        """
+        decisive = self.n_wins + self.n_losses
+        return self.n_wins / decisive if decisive > 0 else self.win_rate
 
 
 def trade_stats(returns: Sequence[float]) -> TradeStats:
@@ -33,4 +46,6 @@ def trade_stats(returns: Sequence[float]) -> TradeStats:
         win_rate=len(wins) / n,
         avg_win=(sum(wins) / len(wins)) if wins else 0.0,
         avg_loss=(sum(losses) / len(losses)) if losses else 0.0,
+        n_wins=len(wins),
+        n_losses=len(losses),
     )

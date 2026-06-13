@@ -42,6 +42,10 @@ def is_mll_breached(
     constraints: ConstraintSchema,
 ) -> bool:
     # Feature 11: trailing maximum-loss limit measured from peak equity, so the
-    # floor rises (tightens) as the high-water mark rises.
-    floor = portfolio.peak_capital * (1 - constraints.trailing_max_drawdown_pct)
+    # floor rises (tightens) as the high-water mark rises. Defensive fallback to
+    # max_drawdown_pct if the trailing value is somehow unset.
+    trailing = constraints.trailing_max_drawdown_pct
+    if trailing is None:
+        trailing = constraints.max_drawdown_pct
+    floor = portfolio.peak_capital * (1 - trailing)
     return portfolio.capital <= floor

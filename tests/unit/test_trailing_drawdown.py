@@ -55,6 +55,14 @@ def test_mll_uses_trailing_value():
     assert is_mll_breached(_p(95_001.0, 100_000.0), c) is False
 
 
+def test_is_mll_breached_handles_none_trailing():
+    # R10: defensive — if trailing is somehow None, fall back to max_drawdown_pct
+    # rather than crash on `1 - None`.
+    c = _c(max_drawdown_pct=0.10)
+    c.trailing_max_drawdown_pct = None
+    assert is_mll_breached(_p(85_000.0, 100_000.0), c) is True  # floor 90k
+
+
 def test_trailing_tightens_as_equity_rises():
     # Same 95k capital: fine at peak 100k (floor 90k) but breaches once the peak
     # rises to 110k (floor 99k) — the limit trails the high-water mark.

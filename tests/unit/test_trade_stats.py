@@ -36,3 +36,16 @@ def test_all_losses_has_zero_avg_win():
 def test_avg_loss_is_positive_magnitude():
     s = trade_stats([-0.05])
     assert s.avg_loss == 0.05  # magnitude, not signed
+
+
+def test_decisive_win_rate_excludes_scratch_trades():
+    # R9: 1 win, 1 loss, 2 scratch. Raw win_rate counts scratches; decisive
+    # rate (used by Monte Carlo's Bernoulli draw) does not.
+    s = trade_stats([0.01, -0.01, 0.0, 0.0])
+    assert s.win_rate == 0.25            # 1 / 4
+    assert s.decisive_win_rate == 0.5    # 1 / (1 + 1)
+
+
+def test_decisive_win_rate_falls_back_without_counts():
+    s = TradeStats(count=10, win_rate=0.6, avg_win=0.02, avg_loss=0.01)
+    assert s.decisive_win_rate == 0.6    # no win/loss counts → use win_rate

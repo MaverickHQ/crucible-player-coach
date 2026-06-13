@@ -40,24 +40,29 @@ def simulate_challenge(
 
     total_trades = max(1, int(round(days_remaining * trades_per_day)))
     rng = np.random.default_rng(seed)
-    successes = 0
 
-    for _ in range(n_paths):
-        equity = 0.0
-        peak = 0.0
-        outcomes = rng.random(total_trades) < stats.win_rate
-        for win in outcomes:
-            equity += stats.avg_win if win else -stats.avg_loss
-            if equity > peak:
-                peak = equity
-            if equity >= profit_target:
-                successes += 1
-                break
-            if peak - equity >= drawdown_limit:
-                break
+    # Vectorised over all paths: draw every trade, cumulate equity, and decide
+    # per path whether the target was reached before a trailing-drawdown breach.
+    wins = rng.random((n_paths, total_trades)) < stats.decisive_win_rate
+    increments = np.where(wins, stats.avg_win, -stats.avg_loss)
+    equity = np.cumsum(increments, axis=1)
+    # The starting equity (0) is a peak candidate, so a losing first trade draws
+    # down from 0 rather than from a negative running max.
+    peak = np.maximum(np.maximum.accumulate(equity, axis=1), 0.0)
+    drawdown = peak - equity
+
+    hit = equity >= profit_target
+    breach = drawdown >= drawdown_limit
+    no_event = total_trades + 1  # sentinel "never happened" index
+    hit_any = hit.any(axis=1)
+    first_hit = np.where(hit_any, hit.argmax(axis=1), no_event)
+    first_breach = np.where(breach.any(axis=1), breach.argmax(axis=1), no_event)
+    # A path succeeds if it reaches the target no later than it breaches (the
+    # loop checked the target first within a step, so ties go to success).
+    success = hit_any & (first_hit <= first_breach)
 
     return MonteCarloResult(
-        success_probability=successes / n_paths, n_paths=n_paths
+        success_probability=float(success.mean()), n_paths=n_paths
     )
 
 

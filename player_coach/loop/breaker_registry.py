@@ -48,7 +48,8 @@ class BreakerRegistry:
 
     Replaces the hardcoded if-ladder in the coach loop so new breakers (F11
     trailing drawdown, F13 consistency) plug in by priority without editing the
-    loop body.
+    loop body. Breakers that share a priority are checked in registration order
+    (the sort is stable), so the first-registered wins a tie.
     """
 
     def __init__(self, breakers: list[CircuitBreaker] | None = None) -> None:
