@@ -171,6 +171,13 @@ def test_backtest_result_has_risk_metrics(tmp_path: Path) -> None:
     assert result.calmar == calmar_ratio(result.equity_curve)
 
 
+def test_backtest_result_has_drawdown_profile(tmp_path: Path) -> None:
+    from player_coach.backtest.metrics import avg_recovery_time, drawdown_duration
+    result, _, _ = _run_with_prices([100.0, 120.0, 90.0, 130.0], tmp_path=tmp_path)
+    assert result.max_drawdown_duration == drawdown_duration(result.equity_curve)
+    assert result.avg_recovery_time == avg_recovery_time(result.equity_curve)
+
+
 def test_backtest_result_has_correct_days_run(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0, 188.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)

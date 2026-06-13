@@ -13,7 +13,9 @@ from player_coach.analytics import (
     trade_stats,
 )
 from player_coach.backtest.metrics import (
+    avg_recovery_time,
     calmar_ratio,
+    drawdown_duration,
     sharpe_ratio,
     sortino_ratio,
 )
@@ -62,6 +64,10 @@ class BacktestResult:
     sharpe: float = 0.0
     sortino: float = 0.0
     calmar: float = 0.0
+    # Feature 18: drawdown profile — distinguishes one-catastrophe from
+    # many-small-loss strategies at the same max drawdown.
+    max_drawdown_duration: int = 0
+    avg_recovery_time: float = 0.0
 
 
 @dataclass
@@ -375,4 +381,6 @@ class BacktestRunner:
             sharpe=sharpe_ratio(equity_curve),
             sortino=sortino_ratio(equity_curve),
             calmar=calmar_ratio(equity_curve),
+            max_drawdown_duration=drawdown_duration(equity_curve),
+            avg_recovery_time=avg_recovery_time(equity_curve),
         )
