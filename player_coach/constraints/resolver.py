@@ -64,22 +64,41 @@ def apply_regime_profile(
     )
 
 
-def regime_overlay(
-    profiles: dict[str, RegimeConstraintProfile] | None = None,
+def profile_overlay(
+    context_key: str,
+    profiles: dict[str, RegimeConstraintProfile],
+    fallback: str | None = None,
 ) -> Stage:
-    """Resolver stage (F6) that tightens/relaxes constraints by regime label.
+    """Generic profile-by-context-key stage (R6).
 
-    Reads ``context["regime_label"]``; a missing or unrecognised label falls
-    back to the conservative ``unknown`` profile.
+    Looks up ``context[context_key]`` in ``profiles`` and applies it. ``fallback``
+    is the policy on a missing/unknown key: a key (e.g. ``"unknown"``) means apply
+    that profile; ``None`` means leave the schema unchanged. Shared by the regime
+    overlay (F6, conservative fallback) and the phase profile (F12, no-op fallback).
     """
-    profiles = profiles or DEFAULT_REGIME_PROFILES
 
     def stage(schema: ConstraintSchema, context: dict[str, Any]) -> ConstraintSchema:
-        label = context.get("regime_label") or "unknown"
-        profile = profiles.get(label, profiles["unknown"])
+        key = context.get(context_key) or fallback
+        if not key:
+            return schema
+        profile = profiles.get(key)
+        if profile is None and fallback is not None:
+            profile = profiles.get(fallback)
+        if profile is None:
+            return schema
         return apply_regime_profile(schema, profile)
 
     return stage
+
+
+def regime_overlay(
+    profiles: dict[str, RegimeConstraintProfile] | None = None,
+) -> Stage:
+    """Resolver stage (F6): tighten/relax by regime label, conservative
+    (``unknown``) fallback on a missing/unrecognised label."""
+    return profile_overlay(
+        "regime_label", profiles or DEFAULT_REGIME_PROFILES, fallback="unknown"
+    )
 
 
 def garch_scale(
@@ -123,18 +142,9 @@ def phase_profile(
     applies the matching profile. ``lock_in`` zeroes ``max_open_positions`` to
     block new entries. A missing or unknown phase leaves the schema unchanged.
     """
-    profiles = profiles or DEFAULT_PHASE_PROFILES
-
-    def stage(schema: ConstraintSchema, context: dict[str, Any]) -> ConstraintSchema:
-        phase = context.get("challenge_phase")
-        if not phase:
-            return schema
-        profile = profiles.get(phase)
-        if profile is None:
-            return schema
-        return apply_regime_profile(schema, profile)
-
-    return stage
+    return profile_overlay(
+        "challenge_phase", profiles or DEFAULT_PHASE_PROFILES, fallback=None
+    )
 
 
 def clamp_invariants() -> Stage:
