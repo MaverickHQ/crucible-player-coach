@@ -163,7 +163,11 @@ with st.sidebar:
     st.divider()
     with st.expander("Challenge Monte Carlo (F14)"):
         # Session-start P(pass): one number from the strategy's realised edge.
-        from player_coach.analytics import TradeStats, simulate_challenge
+        from player_coach.analytics import (
+            TradeStats,
+            apply_monte_carlo_trigger,
+            simulate_challenge,
+        )
 
         mc_win = st.slider("Win rate", 0.0, 1.0, 0.55, 0.01)
         mc_avg_win = st.number_input("Avg win (fraction)", value=0.010, step=0.005, format="%.3f")
@@ -179,8 +183,14 @@ with st.sidebar:
             days_remaining=int(mc_days), trades_per_day=mc_tpd, n_paths=2_000,
         )
         st.metric("P(pass)", f"{mc_result.success_probability:.0%}")
-        if mc_result.success_probability < 0.40:
-            st.warning("Below 40% → auto-escalate to conservation phase.")
+        recommended = apply_monte_carlo_trigger(
+            "building", mc_result.success_probability
+        )
+        if recommended != "building":
+            st.warning(
+                f"Below 40% → backtests auto-escalate to **{recommended}** "
+                "(the runner applies this; the interactive exchange is advisory)."
+            )
 
     st.divider()
     run_clicked = st.button("Run Exchange", type="primary", use_container_width=True)

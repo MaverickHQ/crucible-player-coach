@@ -276,6 +276,27 @@ def test_open_positions_visible_in_portfolio_state(tmp_path: Path) -> None:
     assert "P1" in [p.position_id for p in ps_day1.open_positions]
 
 
+def test_monte_carlo_sets_prob_and_triggers_conservation(tmp_path: Path) -> None:
+    # R1: with a realised trade, the runner computes mc_success_prob and applies
+    # the trigger. One winning trade has no losses → P(pass)=0.0 (R2) → escalate
+    # building → conservation.
+    loop = MagicMock()
+    arts = [_enter_at(100.0), _exit_artifact(), _hold_artifact(), _hold_artifact()]
+    loop.run.side_effect = arts
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s",
+        mc_min_trades=1, mc_every=1,
+    )
+    df = _make_price_df([100.0, 110.0, 110.0, 110.0])
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = df
+        runner.run(symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+                   constraints=_make_constraints(), output_dir=tmp_path)
+    day3 = loop.run.call_args_list[3].kwargs["world_state"]
+    assert day3["mc_success_prob"] == 0.0
+    assert day3["challenge_phase"] == "conservation"
+
+
 def test_winning_short_increases_pnl(tmp_path: Path) -> None:
     # Seam 0: an approved enter_short must actually take a position; a short into
     # a falling price profits.

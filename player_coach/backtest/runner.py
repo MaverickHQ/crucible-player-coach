@@ -6,7 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 import yfinance as yf
 
-from player_coach.analytics import half_kelly, trade_stats
+from player_coach.analytics import (
+    apply_monte_carlo_trigger,
+    half_kelly,
+    simulate_challenge,
+    trade_stats,
+)
 from player_coach.constraints.phase_profiles import challenge_phase
 from player_coach.constraints.resolver import (
     ConstraintResolver,
@@ -106,10 +111,22 @@ class BacktestRunner:
         strategy_id: str,
         enricher: WorldStateEnricher | None = None,
         resolver: ConstraintResolver | None = None,
+        profit_target: float = 0.06,
+        mc_min_trades: int = 10,
+        mc_every: int = 20,
+        mc_paths: int = 1_000,
+        mc_trades_per_day: float = 1.0,
     ) -> None:
         self._loop = loop
         self._db_store = db_store
         self._strategy_id = strategy_id
+        # F14: Monte Carlo P(pass) is recomputed on a cadence (not every bar) once
+        # enough trades have closed; it feeds the auto-conservation trigger.
+        self._profit_target = profit_target
+        self._mc_min_trades = mc_min_trades
+        self._mc_every = mc_every
+        self._mc_paths = mc_paths
+        self._mc_trades_per_day = mc_trades_per_day
         # F6 regime + F7 GARCH enrich world state; the resolver then layers the
         # regime overlay and (on top) garch volatility-scaling onto constraints.
         self._enricher = enricher or WorldStateEnricher(
@@ -149,8 +166,10 @@ class BacktestRunner:
         realized_trade_returns: list[float] = []
         position_seq = 0
         buffer = OHLCVBuffer()
+        total_days = len(df)
+        mc_prob: float | None = None
 
-        for date, row in df.iterrows():
+        for day_index, (date, row) in enumerate(df.iterrows()):
             close = float(row["Close"])
             high = float(row["High"])
             low = float(row["Low"])
@@ -177,10 +196,25 @@ class BacktestRunner:
                 cumulative_pnl=cumulative_pnl,
             )
 
+            # F14: recompute P(pass) on a cadence once enough trades have closed.
+            if (len(realized_trade_returns) >= self._mc_min_trades
+                    and day_index % self._mc_every == 0):
+                mc_prob = simulate_challenge(
+                    trade_stats(realized_trade_returns),
+                    profit_target=self._profit_target,
+                    drawdown_limit=constraints.trailing_max_drawdown_pct,
+                    days_remaining=max(0, total_days - day_index),
+                    trades_per_day=self._mc_trades_per_day,
+                    n_paths=self._mc_paths,
+                ).success_probability
+
             # F12: challenge profit fraction (from the prior day's close) drives
-            # the phase, which the resolver's phase_profile stage acts on.
+            # the phase; F14 escalates building→conservation when P(pass) is low.
             challenge_pnl_pct = (
                 cumulative_pnl / initial_capital if initial_capital else 0.0
+            )
+            phase = apply_monte_carlo_trigger(
+                challenge_phase(challenge_pnl_pct), mc_prob
             )
             world_state_obj = WorldState(
                 symbol=symbol,
@@ -189,10 +223,11 @@ class BacktestRunner:
                 sma10=_compute_sma(closes, 10),
                 volume=volume,
                 challenge_pnl_pct=challenge_pnl_pct,
-                challenge_phase=challenge_phase(challenge_pnl_pct),
+                challenge_phase=phase,
                 consistency_status=constraints.consistency_status(
                     daily_pnl, cumulative_pnl
                 ),
+                mc_success_prob=mc_prob,
             )
             # F6: write regime_label/regime_probability, then resolve the
             # effective constraints for this regime (conservative if unknown).
