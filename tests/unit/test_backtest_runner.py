@@ -171,6 +171,30 @@ def test_backtest_result_has_risk_metrics(tmp_path: Path) -> None:
     assert result.calmar == calmar_ratio(result.equity_curve)
 
 
+def test_backtest_result_has_config_mc_prob(tmp_path: Path) -> None:
+    # A3: P(pass) projected from the config's realised edge. Two closed trades:
+    # win (+0.10) and loss (-0.10).
+    from player_coach.analytics import simulate_challenge, trade_stats
+    prices = [100.0, 110.0, 100.0, 90.0]
+    arts = [_enter_at(100.0), _exit_artifact(), _enter_at(100.0), _exit_artifact()]
+    result, _, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
+    # Reproduce the runner's exact float returns (close/entry - 1).
+    realized = [110.0 / 100.0 - 1.0, 90.0 / 100.0 - 1.0]
+    expected = simulate_challenge(
+        trade_stats(realized), profit_target=0.06, drawdown_limit=0.10,
+        days_remaining=20, trades_per_day=1.0, n_paths=1000,
+    ).success_probability
+    assert result.mc_success_prob == expected
+
+
+def test_no_trades_config_mc_prob_zero(tmp_path: Path) -> None:
+    result, _, _ = _run_with_prices(
+        [100.0, 101.0, 102.0], artifact_factory=lambda i: _hold_artifact(),
+        tmp_path=tmp_path)
+    assert result.mc_success_prob == 0.0
+
+
 def test_backtest_result_has_drawdown_profile(tmp_path: Path) -> None:
     from player_coach.backtest.metrics import avg_recovery_time, drawdown_duration
     result, _, _ = _run_with_prices([100.0, 120.0, 90.0, 130.0], tmp_path=tmp_path)

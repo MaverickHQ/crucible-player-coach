@@ -68,6 +68,9 @@ class BacktestResult:
     # many-small-loss strategies at the same max drawdown.
     max_drawdown_duration: int = 0
     avg_recovery_time: float = 0.0
+    # Feature 17 (A3): challenge P(pass) projected from this config's realised
+    # edge — the challenge-specific evaluation criterion (vs raw return).
+    mc_success_prob: float = 0.0
 
 
 @dataclass
@@ -134,6 +137,7 @@ class BacktestRunner:
         mc_every: int = 20,
         mc_paths: int = 1_000,
         mc_trades_per_day: float = 1.0,
+        mc_eval_horizon: int = 20,
     ) -> None:
         self._loop = loop
         self._db_store = db_store
@@ -147,6 +151,7 @@ class BacktestRunner:
         self._mc_every = mc_every
         self._mc_paths = mc_paths
         self._mc_trades_per_day = mc_trades_per_day
+        self._mc_eval_horizon = mc_eval_horizon
         # F6 regime + F7 GARCH enrich world state; the resolver then layers the
         # regime overlay and (on top) garch volatility-scaling onto constraints.
         self._enricher = enricher or WorldStateEnricher(
@@ -383,4 +388,12 @@ class BacktestRunner:
             calmar=calmar_ratio(equity_curve),
             max_drawdown_duration=drawdown_duration(equity_curve),
             avg_recovery_time=avg_recovery_time(equity_curve),
+            mc_success_prob=simulate_challenge(
+                trade_stats(realized_trade_returns),
+                profit_target=self._profit_target,
+                drawdown_limit=constraints.trailing_max_drawdown_pct,
+                days_remaining=self._mc_eval_horizon,
+                trades_per_day=self._mc_trades_per_day,
+                n_paths=self._mc_paths,
+            ).success_probability,
         )
