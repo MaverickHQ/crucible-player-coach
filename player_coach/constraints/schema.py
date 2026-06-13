@@ -52,10 +52,10 @@ class ConstraintSchema:
         total or day is ``ok`` (the rule only bites on a profitable day)."""
         if total_pnl <= 0.0 or day_pnl <= 0.0:
             return "ok"
-        share = day_pnl / total_pnl
-        if share > self.consistency_rule_pct:
+        # Single-source the hard line through the breaker so they cannot diverge.
+        if self.is_consistency_breached(day_pnl, total_pnl):
             return "breached"
-        if share >= self.consistency_warn_pct:
+        if day_pnl / total_pnl >= self.consistency_warn_pct:
             return "approaching"
         return "ok"
 

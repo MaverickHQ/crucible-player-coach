@@ -49,6 +49,23 @@ def test_strong_edge_high_probability():
     assert r.success_probability > 0.8
 
 
+def test_no_losses_does_not_inflate_probability():
+    # R2: avg_loss == 0 means downside can't be modelled — losing draws would add
+    # -0.0 and drawdown could never fire, falsely reporting ~1.0. Must be 0.0.
+    r = simulate_challenge(_stats(0.9, 0.02, 0.0), 0.06, 0.10, 20, 1, n_paths=500)
+    assert r.success_probability == 0.0
+
+
+def test_expired_challenge_returns_zero():
+    # R3: no trades remaining → cannot pass. Must not floor to one trade.
+    assert simulate_challenge(
+        _stats(1.0, 0.10, 0.01), 0.06, 0.10, 0, 1, n_paths=100
+    ).success_probability == 0.0
+    assert simulate_challenge(
+        _stats(1.0, 0.10, 0.01), 0.06, 0.10, 5, 0.0, n_paths=100
+    ).success_probability == 0.0
+
+
 # -------------------------------------------------------- auto-conservation
 
 def test_trigger_escalates_building_to_conservation():

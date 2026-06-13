@@ -29,7 +29,13 @@ def simulate_challenge(
     ``+avg_win`` with probability ``win_rate``, else ``-avg_loss`` (both as return
     fractions). Seeded for reproducibility. With no realised edge → 0.0.
     """
-    if stats.count == 0 or (stats.avg_win <= 0.0 and stats.avg_loss <= 0.0):
+    # No trades remaining (expired challenge) → cannot pass.
+    if days_remaining <= 0 or trades_per_day <= 0:
+        return MonteCarloResult(success_probability=0.0, n_paths=n_paths)
+    # Need both a positive win and a positive loss magnitude to model the gamble.
+    # With avg_loss == 0, losing draws add -0.0, drawdown never fires, and the
+    # probability falsely inflates toward 1.0.
+    if stats.count == 0 or stats.avg_win <= 0.0 or stats.avg_loss <= 0.0:
         return MonteCarloResult(success_probability=0.0, n_paths=n_paths)
 
     total_trades = max(1, int(round(days_remaining * trades_per_day)))

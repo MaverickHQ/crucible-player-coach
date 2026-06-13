@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from player_coach.constraints.regime_profiles import RegimeConstraintProfile
@@ -51,5 +52,10 @@ def load_phase_profiles(path: str | Path) -> dict[str, RegimeConstraintProfile]:
     data = json.loads(Path(path).read_text())
     profiles = dict(DEFAULT_PHASE_PROFILES)
     for phase, raw in data.items():
-        profiles[phase] = RegimeConstraintProfile.from_dict(raw)
+        base = DEFAULT_PHASE_PROFILES.get(phase)
+        # Backfill missing fields from the default profile so a partial override
+        # (e.g. lock_in without max_open_positions_override) doesn't silently
+        # drop the entry block.
+        merged = {**asdict(base), **raw} if base is not None else raw
+        profiles[phase] = RegimeConstraintProfile.from_dict(merged)
     return profiles

@@ -45,6 +45,16 @@ def test_ok_when_day_non_positive():
     assert _s().consistency_status(-100.0, 1000.0) == "ok"
 
 
+def test_status_breached_agrees_with_hard_breaker():
+    # R4: the soft status's "breached" line must stay single-sourced with the
+    # hard circuit breaker so they cannot diverge.
+    s = _s()
+    for day, total in [(600.0, 1000.0), (500.0, 1000.0), (501.0, 1000.0),
+                       (0.0, 1000.0), (700.0, 1000.0), (100.0, 200.0)]:
+        assert (s.consistency_status(day, total) == "breached") == \
+            s.is_consistency_breached(day, total)
+
+
 def test_warn_pct_defaults_to_0_4():
     schema = ConstraintSchema.from_dict({
         "max_position_pct": 0.15, "max_single_trade_pct": 0.05,

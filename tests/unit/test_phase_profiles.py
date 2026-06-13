@@ -64,3 +64,13 @@ def test_load_phase_profiles_round_trip(tmp_path: Path):
     }))
     profiles = load_phase_profiles(path)
     assert profiles["lock_in"] == RegimeConstraintProfile(0.1, 0.1, 1.0, 0)
+
+
+def test_partial_override_keeps_default_fields(tmp_path: Path):
+    # R5: a partial lock_in override must not silently drop the entry block
+    # (max_open_positions_override=0) by falling back to None.
+    path = tmp_path / "phases.json"
+    path.write_text(json.dumps({"lock_in": {"max_single_trade_pct_mult": 0.1}}))
+    profiles = load_phase_profiles(path)
+    assert profiles["lock_in"].max_single_trade_pct_mult == 0.1
+    assert profiles["lock_in"].max_open_positions_override == 0  # kept from default
