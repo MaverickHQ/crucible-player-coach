@@ -55,7 +55,38 @@ class _RunnerPosition:
     entry_price: float
     cost: float
     position_id: str
+    direction: str = "long"
     prev_close: float = 0.0
+
+    def value(self, price: float) -> float:
+        """Mark-to-market value; a short gains as price falls."""
+        if self.entry_price == 0:
+            return self.cost
+        ratio = price / self.entry_price
+        return self.cost * (2.0 - ratio) if self.direction == "short" else self.cost * ratio
+
+    def daily_change(self, close: float) -> float:
+        if not self.prev_close:
+            return 0.0
+        move = (close - self.prev_close) / self.prev_close
+        if self.direction == "short":
+            move = -move
+        return move * self.cost
+
+    def realized_return(self, close: float) -> float:
+        if self.entry_price == 0:
+            return 0.0
+        r = close / self.entry_price - 1.0
+        return -r if self.direction == "short" else r
+
+    def to_dict(self) -> dict:
+        return {
+            "position_id": self.position_id,
+            "symbol": self.symbol,
+            "direction": self.direction,
+            "entry_price": self.entry_price,
+            "size_pct": self.size_pct,
+        }
 
 
 def _compute_sma(prices, n: int) -> float:
@@ -133,16 +164,15 @@ class BacktestRunner:
             )
             closes = buffer.closes
 
-            daily_pnl = sum(
-                (close - p.prev_close) / p.prev_close * p.cost if p.prev_close else 0.0
-                for p in open_positions
-            )
+            daily_pnl = sum(p.daily_change(close) for p in open_positions)
 
             portfolio_state = PortfolioState(
                 capital=capital,
                 daily_starting_balance=daily_starting_balance,
                 peak_capital=peak_capital,
                 cash_available=cash_available,
+                # Seam 0: the Player sees its open book and can propose exits.
+                open_positions=list(open_positions),
                 daily_pnl=daily_pnl,
                 cumulative_pnl=cumulative_pnl,
             )
@@ -197,7 +227,8 @@ class BacktestRunner:
                     "proposal", {}
                 ).get("actions", []):
                     action_type = action.get("action_type")
-                    if action_type == "enter_long":
+                    if action_type in ("enter_long", "enter_short"):
+                        direction = "short" if action_type == "enter_short" else "long"
                         size_pct = float(action.get("size_pct", 0.0))
                         entry_price = float(action.get("entry_price", close))
                         cost = capital * size_pct
@@ -206,7 +237,7 @@ class BacktestRunner:
                         # close both).
                         pid = (
                             action.get("position_id")
-                            or f"{symbol}-{date}-{position_seq}-long"
+                            or f"{symbol}-{date}-{position_seq}-{direction}"
                         )
                         position_seq += 1
                         open_positions.append(
@@ -216,6 +247,7 @@ class BacktestRunner:
                                 entry_price=entry_price,
                                 cost=cost,
                                 position_id=pid,
+                                direction=direction,
                                 prev_close=entry_price,
                             )
                         )
@@ -227,17 +259,14 @@ class BacktestRunner:
                         # An exit closes exactly one position — the first match.
                         for i, pos in enumerate(open_positions):
                             if pos.position_id == pid:
-                                proceeds = pos.cost * (close / pos.entry_price)
-                                cash_available += proceeds
+                                cash_available += pos.value(close)
                                 realized_trade_returns.append(
-                                    close / pos.entry_price - 1.0
+                                    pos.realized_return(close)
                                 )
                                 del open_positions[i]
                                 break
 
-            position_value = sum(
-                p.cost * (close / p.entry_price) for p in open_positions
-            )
+            position_value = sum(p.value(close) for p in open_positions)
             capital = cash_available + position_value
             peak_capital = max(peak_capital, capital)
             cumulative_pnl = capital - initial_capital

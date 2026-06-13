@@ -61,6 +61,14 @@ def check_constraints(
     if total > constraints.max_position_pct + _EPS:
         add("max_position_pct")
 
+    # max_leverage — gross deployed (open book + new entries) vs equity
+    existing_exposure = sum(
+        (_to_float(p.get("size_pct")) or 0.0)
+        for p in (world_state.get("open_positions") or [])
+    )
+    if existing_exposure + total > constraints.max_leverage + _EPS:
+        add("max_leverage")
+
     # min_risk_reward
     for a in entries:
         entry = _to_float(a.get("entry_price"))

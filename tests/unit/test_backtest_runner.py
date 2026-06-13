@@ -265,6 +265,32 @@ def test_world_state_carries_consistency_status(tmp_path: Path) -> None:
     assert statuses[2] == "breached"
 
 
+def test_open_positions_visible_in_portfolio_state(tmp_path: Path) -> None:
+    # Seam 0: the Player must see its book to exit it. Enter day 0; day 1's
+    # portfolio_state must carry the open position.
+    prices = [185.0, 186.0]
+    arts = [_enter_at(185.0), _hold_artifact()]
+    _, loop, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
+    ps_day1 = loop.run.call_args_list[1].kwargs["portfolio_state"]
+    assert "P1" in [p.position_id for p in ps_day1.open_positions]
+
+
+def test_winning_short_increases_pnl(tmp_path: Path) -> None:
+    # Seam 0: an approved enter_short must actually take a position; a short into
+    # a falling price profits.
+    prices = [100.0, 90.0]
+    short = _action_artifact({
+        "action_type": "enter_short", "symbol": "AMZN", "size_pct": 0.05,
+        "entry_price": 100.0, "stop_loss": 105.0, "take_profit": 90.0,
+        "position_id": "S1",
+    })
+    result, _, _ = _run_with_prices(
+        prices, artifact_factory=lambda i: [short, _hold_artifact()][i],
+        tmp_path=tmp_path)
+    assert result.total_pnl > 0
+
+
 def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)

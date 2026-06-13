@@ -96,6 +96,24 @@ def test_atr_check_skipped_when_atr_absent():
     assert "min_stop_atr_multiple" not in v
 
 
+def test_leverage_exceeded_with_open_book():
+    # Seam 0: existing exposure + new entries must respect max_leverage.
+    ws = {"open_positions": [{"size_pct": 0.8}, {"size_pct": 0.6}]}  # 1.4 deployed
+    v = check_constraints(
+        _prop(_entry(size_pct=0.3)),
+        _c(max_leverage=1.5, max_open_positions=10, max_position_pct=1.0,
+           max_single_trade_pct=1.0), ws)
+    assert "max_leverage" in v  # 1.4 + 0.3 = 1.7 > 1.5
+
+
+def test_leverage_ok_within_limit():
+    ws = {"open_positions": [{"size_pct": 0.5}]}
+    v = check_constraints(
+        _prop(_entry(size_pct=0.3)),
+        _c(max_leverage=1.5, max_position_pct=1.0, max_single_trade_pct=1.0), ws)
+    assert "max_leverage" not in v  # 0.5 + 0.3 = 0.8 < 1.5
+
+
 def test_vwap_is_never_a_violation():
     # Soft preference must never appear as a hard violation.
     ws = {"vwap": 100.0, "price_vs_vwap": 0.5}
