@@ -215,35 +215,41 @@ if run_clicked:
 
         from player_coach.backtest.reporting import format_progress_status
 
-        def _run_with_progress(label: str, strategy_id: str, constraints):
-            st.markdown(f"**{label}**")
-            bar = st.progress(0.0)
-            status = st.empty()
-            chart_slot = st.empty()
-            equity: list[float] = []
+        # Pre-render BOTH preset panels so each has its own progress bar +
+        # status caption + sparkline that fills concurrently while the threads
+        # below race their respective runners.
+        def _make_panel(label: str):
+            st.markdown(f"### {label}")
+            return {
+                "bar": st.progress(0.0),
+                "status": st.empty(),
+                "chart": st.empty(),
+                "equity": [],
+            }
 
+        panels = {"a": _make_panel(preset_a), "b": _make_panel(preset_b)}
+
+        def _runner(strategy_id, constraints, panel):
             def _on_day(payload):
-                bar.progress(payload["day"] / max(1, payload["total_days"]))
-                status.caption(format_progress_status(payload))
-                equity.append(payload["capital"])
-                if len(equity) >= 2:
-                    chart_slot.line_chart(equity, height=120)
-
-            try:
-                return BacktestRunner(
-                    loop=_make_loop(api_key),
-                    db_store=store,
-                    strategy_id=strategy_id,
-                    on_day=_on_day,
-                ).run(
-                    symbol=symbol,
-                    start_date=str(start_date),
-                    end_date=str(end_date),
-                    constraints=constraints,
+                panel["bar"].progress(
+                    payload["day"] / max(1, payload["total_days"])
                 )
-            except Exception as exc:
-                st.error(f"Backtest {label} failed: {exc}")
-                st.stop()
+                panel["status"].caption(format_progress_status(payload))
+                panel["equity"].append(payload["capital"])
+                if len(panel["equity"]) >= 2:
+                    panel["chart"].line_chart(panel["equity"], height=120)
+
+            return BacktestRunner(
+                loop=_make_loop(api_key),
+                db_store=store,
+                strategy_id=strategy_id,
+                on_day=_on_day,
+            ).run(
+                symbol=symbol,
+                start_date=str(start_date),
+                end_date=str(end_date),
+                constraints=constraints,
+            )
 
         from dashboard.recovery import save_snapshot
         from player_coach.backtest.reporting import (
@@ -288,19 +294,43 @@ if run_clicked:
             st.session_state[f"last_result_{slot}"] = preset_snapshot
             return preset_snapshot
 
-        # Render preset A's panel BEFORE starting preset B — if B drops, A is
-        # already on screen.
-        st.markdown("### Preset A in progress")
-        result_a = _run_with_progress(preset_a, strategy_id_a, constraints_a)
-        snap_a = _persist_preset(preset_a, result_a, preset_b)
-        st.success(
-            f"{preset_a} finished — total return {snap_a['total_return']:.2%}, "
-            f"P(pass) {snap_a['metrics']['mc_success_prob']:.0%}."
+        # Run both presets in parallel — half the wall clock, no extra cost.
+        # Failures are isolated per slot; one preset crashing leaves the other
+        # free to finish and persist normally.
+        from dashboard.parallel import run_parallel
+
+        outcomes = run_parallel(
+            {
+                "a": (preset_a, lambda label, _on_event:
+                      _runner(strategy_id_a, constraints_a, panels["a"])),
+                "b": (preset_b, lambda label, _on_event:
+                      _runner(strategy_id_b, constraints_b, panels["b"])),
+            }
         )
 
-        st.markdown("### Preset B in progress")
-        result_b = _run_with_progress(preset_b, strategy_id_b, constraints_b)
-        snap_b = _persist_preset(preset_b, result_b, preset_a)
+        if outcomes["a"].error and outcomes["b"].error:
+            st.error(f"Both backtests failed: {outcomes['a'].error}")
+            st.stop()
+
+        result_a = outcomes["a"].result
+        result_b = outcomes["b"].result
+        if outcomes["a"].error is not None:
+            st.error(f"Backtest {preset_a} failed: {outcomes['a'].error}")
+        else:
+            snap_a = _persist_preset(preset_a, result_a, preset_b)
+            st.success(
+                f"{preset_a} finished — total return {snap_a['total_return']:.2%}, "
+                f"P(pass) {snap_a['metrics']['mc_success_prob']:.0%}."
+            )
+        if outcomes["b"].error is not None:
+            st.error(f"Backtest {preset_b} failed: {outcomes['b'].error}")
+        else:
+            snap_b = _persist_preset(preset_b, result_b, preset_a)
+
+        # If either failed, we've persisted the survivor; bail before the
+        # comparison (which needs both results).
+        if outcomes["a"].error is not None or outcomes["b"].error is not None:
+            st.stop()
 
         # Now both are saved; compute the side-by-side comparison.
         run_ids_a = [e["run_id"] for e in result_a.exchanges]
