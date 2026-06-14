@@ -52,7 +52,15 @@ class PlayerAgent:
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=512,
-                system=_SYSTEM_PROMPT,
+                # Structured system block + ephemeral cache_control so the large
+                # static prompt is paid in full on the first call (within the
+                # 5-min TTL window) and served at ~10% input cost on subsequent
+                # calls within the same backtest day.
+                system=[{
+                    "type": "text",
+                    "text": _SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[{"role": "user", "content": user_content}],
             )
         except Exception as e:
@@ -65,11 +73,15 @@ class PlayerAgent:
             parsed = json.loads(text)
         except json.JSONDecodeError:
             parsed = {"actions": [], "reasoning": text}
+        usage = response.usage
         return {
             "actions": parsed.get("actions", []),
             "reasoning": parsed.get("reasoning", ""),
             "tokens_used": {
-                "player": response.usage.input_tokens + response.usage.output_tokens
+                "player": usage.input_tokens + usage.output_tokens,
+                "cache_read_player": int(
+                    getattr(usage, "cache_read_input_tokens", 0) or 0
+                ),
             },
         }
 

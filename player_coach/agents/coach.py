@@ -45,7 +45,13 @@ class CoachAgent:
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=1024,
-                system=_SYSTEM_PROMPT,
+                # Static, large system prompt — cache it. See PlayerAgent for
+                # the same pattern and motivation.
+                system=[{
+                    "type": "text",
+                    "text": _SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=[{"role": "user", "content": user_content}],
             )
         except Exception as e:
@@ -68,12 +74,16 @@ class CoachAgent:
         ):
             verdict = "ABORT"
 
+        usage = response.usage
         return {
             "verdict": verdict,
             "violations": violations,
             "critique": parsed.get("critique"),
             "tokens_used": {
-                "coach": response.usage.input_tokens + response.usage.output_tokens
+                "coach": usage.input_tokens + usage.output_tokens,
+                "cache_read_coach": int(
+                    getattr(usage, "cache_read_input_tokens", 0) or 0
+                ),
             },
         }
 
