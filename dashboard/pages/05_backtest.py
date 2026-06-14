@@ -245,25 +245,73 @@ if run_clicked:
                 st.error(f"Backtest {label} failed: {exc}")
                 st.stop()
 
-        result_a = _run_with_progress(preset_a, strategy_id_a, constraints_a)
-        result_b = _run_with_progress(preset_b, strategy_id_b, constraints_b)
-
-        run_ids_a = [e["run_id"] for e in result_a.exchanges]
-        run_ids_b = [e["run_id"] for e in result_b.exchanges]
-
-        comparison = StrategyComparator(store).compare(
-            run_ids_a=run_ids_a,
-            run_ids_b=run_ids_b,
-            label_a=preset_a,
-            label_b=preset_b,
+        from dashboard.recovery import save_snapshot
+        from player_coach.backtest.reporting import (
+            backtest_metrics,
+            regime_breakdown,
+            walk_forward_report,
         )
 
+        def _persist_preset(label: str, result, other_label: str) -> dict:
+            """Persist a single preset's result as soon as it finishes.
+
+            Writes to disk (recovery), DB (Prior runs), and session_state — so a
+            disconnect after this returns can't lose what we just earned.
+            """
+            metrics = backtest_metrics(result)
+            preset_snapshot = {
+                "label": label,
+                "symbol": symbol,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "metrics": metrics,
+                "regime": regime_breakdown(result),
+                "wf": walk_forward_report(result.equity_curve, 60, 30),
+                "equity_curve": [list(p) for p in result.equity_curve],
+                "days_aborted": result.days_aborted,
+                "total_return": result.total_pnl_pct,
+                "max_drawdown": result.max_drawdown_pct,
+            }
+            save_snapshot(
+                preset_snapshot, strategy_id=f"{label}-{symbol}-{start_date}",
+            )
+            # Mirror into session_state under per-preset keys so a fresh page
+            # render can show "Latest results" even if only one preset finished.
+            partial = st.session_state.get("last_metrics") or {
+                "label_a": preset_a, "label_b": preset_b,
+            }
+            slot = "a" if label == preset_a else "b"
+            partial[slot] = metrics
+            partial[f"regime_{slot}"] = preset_snapshot["regime"]
+            partial[f"wf_{slot}"] = preset_snapshot["wf"]
+            st.session_state["last_metrics"] = partial
+            st.session_state[f"last_result_{slot}"] = preset_snapshot
+            return preset_snapshot
+
+        # Render preset A's panel BEFORE starting preset B — if B drops, A is
+        # already on screen.
+        st.markdown("### Preset A in progress")
+        result_a = _run_with_progress(preset_a, strategy_id_a, constraints_a)
+        snap_a = _persist_preset(preset_a, result_a, preset_b)
+        st.success(
+            f"{preset_a} finished — total return {snap_a['total_return']:.2%}, "
+            f"P(pass) {snap_a['metrics']['mc_success_prob']:.0%}."
+        )
+
+        st.markdown("### Preset B in progress")
+        result_b = _run_with_progress(preset_b, strategy_id_b, constraints_b)
+        snap_b = _persist_preset(preset_b, result_b, preset_a)
+
+        # Now both are saved; compute the side-by-side comparison.
+        run_ids_a = [e["run_id"] for e in result_a.exchanges]
+        run_ids_b = [e["run_id"] for e in result_b.exchanges]
+        comparison = StrategyComparator(store).compare(
+            run_ids_a=run_ids_a, run_ids_b=run_ids_b,
+            label_a=preset_a, label_b=preset_b,
+        )
         record = {
-            "preset_a": preset_a,
-            "preset_b": preset_b,
-            "symbol": symbol,
-            "start_date": str(start_date),
-            "end_date": str(end_date),
+            "preset_a": preset_a, "preset_b": preset_b, "symbol": symbol,
+            "start_date": str(start_date), "end_date": str(end_date),
             "approve_rate_a": comparison.approve_rate_a,
             "approve_rate_b": comparison.approve_rate_b,
             "avg_rounds_a": comparison.avg_rounds_a,
@@ -277,27 +325,56 @@ if run_clicked:
         }
         store.save_backtest_result(record)
         st.session_state["last_backtest"] = record
-
-        from player_coach.backtest.reporting import (
-            backtest_metrics,
-            regime_breakdown,
-            walk_forward_report,
-        )
-        st.session_state["last_metrics"] = {
-            "label_a": preset_a,
-            "label_b": preset_b,
-            "a": backtest_metrics(result_a),
-            "b": backtest_metrics(result_b),
-            "regime_a": regime_breakdown(result_a),
-            "regime_b": regime_breakdown(result_b),
-            "wf_a": walk_forward_report(result_a.equity_curve, 60, 30),
-            "wf_b": walk_forward_report(result_b.equity_curve, 60, 30),
-        }
         st.success(comparison.summary)
 
 # ---------------------------------------------------------------------------
 # Side-by-side results for last run
 # ---------------------------------------------------------------------------
+
+# Recovery banner — when the session has no last_backtest but there's a recent
+# snapshot on disk, offer to rehydrate. Saves a previously-dropped 30-min run.
+if not st.session_state.get("last_backtest"):
+    from dashboard.recovery import list_recoverable
+    _recoverable = list_recoverable()
+    if _recoverable:
+        from datetime import datetime
+        _newest = _recoverable[0]
+        _when = datetime.fromtimestamp(_newest["mtime"]).strftime("%H:%M:%S")
+        _payload = _newest["payload"]
+        with st.container(border=True):
+            st.markdown(
+                f"**Recoverable backtest** — `{_payload.get('label', '?')}` finished "
+                f"at {_when} (return {_payload.get('total_return', 0):.2%})."
+            )
+            if st.button("Restore", key="recover_btn"):
+                metrics = _payload.get("metrics", {})
+                slot = "a"  # show recovered preset on the left
+                st.session_state["last_metrics"] = {
+                    "label_a": _payload.get("label", "recovered"),
+                    "label_b": "—",
+                    slot: metrics,
+                    "b": {},
+                    f"regime_{slot}": _payload.get("regime", {}),
+                    "regime_b": {},
+                    f"wf_{slot}": _payload.get("wf", {"oos_sharpe": 0.0, "folds": 0}),
+                    "wf_b": {"oos_sharpe": 0.0, "folds": 0},
+                }
+                st.session_state["last_backtest"] = {
+                    "preset_a": _payload.get("label", "recovered"),
+                    "preset_b": "—",
+                    "symbol": _payload.get("symbol"),
+                    "start_date": _payload.get("start_date"),
+                    "end_date": _payload.get("end_date"),
+                    "approve_rate_a": 0.0, "approve_rate_b": 0.0,
+                    "avg_rounds_a": 0.0, "avg_rounds_b": 0.0,
+                    "days_aborted_a": _payload.get("days_aborted", 0),
+                    "days_aborted_b": 0,
+                    "total_return_a": _payload.get("total_return", 0.0),
+                    "total_return_b": 0.0,
+                    "max_drawdown_a": _payload.get("max_drawdown", 0.0),
+                    "max_drawdown_b": 0.0,
+                }
+                st.rerun()
 
 _last = st.session_state.get("last_backtest")
 if _last:
