@@ -40,6 +40,23 @@ def _make_price_df(prices: list[float]) -> pd.DataFrame:
     )
 
 
+def _make_ohlc_df(opens: list[float], closes: list[float]) -> pd.DataFrame:
+    """Bars with explicit, *distinct* open vs close — needed to prove the fill
+    price is the bar's open, not its close (Seam 0 bar-timing tests)."""
+    assert len(opens) == len(closes)
+    dates = pd.date_range("2024-01-02", periods=len(opens), freq="B")
+    return pd.DataFrame(
+        {
+            "Open":   opens,
+            "High":   [max(o, c) * 1.01 for o, c in zip(opens, closes)],
+            "Low":    [min(o, c) * 0.99 for o, c in zip(opens, closes)],
+            "Close":  closes,
+            "Volume": [1_000_000] * len(opens),
+        },
+        index=dates,
+    )
+
+
 def _make_approve_artifact() -> dict:
     return {
         "outcome": "APPROVE",
@@ -124,7 +141,12 @@ def _run_with_prices(
     if artifact_factory is None:
         loop.run.return_value = _make_approve_artifact()
     else:
-        loop.run.side_effect = [artifact_factory(i) for i in range(len(prices))]
+        # A1 — Seam 0 bar-timing: N bars produce N-1 decisions (day 0 has no
+        # prior data). Generate exactly that many artifacts.
+        n_decisions = max(0, len(prices) - 1)
+        loop.run.side_effect = [
+            artifact_factory(i) for i in range(n_decisions)
+        ]
 
     df = _make_price_df(prices)
     runner = _make_runner(loop, db_store)
@@ -142,10 +164,12 @@ def _run_with_prices(
     return result, loop, db_store
 
 
-def test_run_calls_loop_once_per_trading_day(tmp_path: Path) -> None:
+def test_run_calls_loop_once_per_decision_day(tmp_path: Path) -> None:
+    # A1 — Seam 0 bar-timing: day 0 has no prior data, so no decision is made.
+    # N bars -> N-1 decisions.
     prices = [185.0, 186.0, 187.0, 188.0, 189.0]
     result, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
-    assert loop.run.call_count == len(prices)
+    assert loop.run.call_count == len(prices) - 1
 
 
 def test_run_records_portfolio_snapshot_per_day(tmp_path: Path) -> None:
@@ -181,8 +205,9 @@ def test_on_day_callback_invoked_per_day(tmp_path: Path) -> None:
 
 def test_on_day_callback_optional(tmp_path: Path) -> None:
     # No callback = no regression: the runner must still run cleanly.
+    # A1: 2 bars -> 1 decision (day 0 has no prior data).
     _, loop, _ = _run_with_prices([100.0, 101.0], tmp_path=tmp_path)
-    assert loop.run.call_count == 2
+    assert loop.run.call_count == 1
 
 
 def test_on_day_callback_failure_swallowed(tmp_path: Path) -> None:
@@ -222,12 +247,16 @@ def test_backtest_result_has_risk_metrics(tmp_path: Path) -> None:
 def test_backtest_result_has_config_mc_prob(tmp_path: Path) -> None:
     # A3: P(pass) projected from the config's realised edge. Two closed trades:
     # win (+0.10) and loss (-0.10).
+    # A1 — Seam 0: day 0 has no decision, so we need one more price than the
+    # number of decisions. 4 decisions [enter/exit/enter/exit] need 5 bars.
+    # Entries fill at open == close == 100; exits at open == close == 110/90.
     from player_coach.analytics import simulate_challenge, trade_stats
-    prices = [100.0, 110.0, 100.0, 90.0]
-    arts = [_enter_at(100.0), _exit_artifact(), _enter_at(100.0), _exit_artifact()]
+    prices = [100.0, 100.0, 110.0, 100.0, 90.0]
+    arts = [_enter_at(100.0), _exit_artifact(),
+            _enter_at(100.0), _exit_artifact()]
     result, _, _ = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
-    # Reproduce the runner's exact float returns (close/entry - 1).
+    # Realised returns reproduce the runner's float math (open / open - 1).
     realized = [110.0 / 100.0 - 1.0, 90.0 / 100.0 - 1.0]
     expected = simulate_challenge(
         trade_stats(realized), profit_target=0.06, drawdown_limit=0.10,
@@ -259,9 +288,10 @@ def test_backtest_result_has_correct_days_run(tmp_path: Path) -> None:
 def test_backtest_result_total_pnl_pct_computed_correctly(tmp_path: Path) -> None:
     # No positions entered (enter_long artifact but size_pct=0 effects are
     # minimal). Capital stays at 100k. total_pnl_pct should be 0.0.
+    # A1: N bars -> N-1 exchanges (day 0 no decision).
     prices = [185.0, 185.0, 185.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)
-    assert result.total_exchanges == len(prices)
+    assert result.total_exchanges == len(prices) - 1
     assert result.total_pnl_pct == result.total_pnl / 100_000.0
 
 
@@ -308,12 +338,13 @@ def test_world_state_carries_computed_atr(tmp_path: Path) -> None:
 
 
 def test_sma_computed_from_buffer_closes(tmp_path: Path) -> None:
-    # SMA must stay correct after close_prices is folded into the OHLCV buffer.
+    # A1: the last decision (for bar 4) sees the buffer with bars [0..3] only —
+    # not bar 4. So SMAs are computed over [10, 20, 30, 40], not [10..50].
     prices = [10.0, 20.0, 30.0, 40.0, 50.0]
     _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
-    ws = loop.run.call_args.kwargs["world_state"]  # last day
-    assert ws["sma5"] == 30.0   # mean(10,20,30,40,50)
-    assert ws["sma10"] == 50.0  # < 10 bars → falls back to the latest price
+    ws = loop.run.call_args.kwargs["world_state"]  # last decision
+    assert ws["sma5"] == 40.0   # 4 bars in buffer < 5 → falls back to last close
+    assert ws["sma10"] == 40.0  # same fallback
 
 
 def test_world_state_carries_challenge_phase(tmp_path: Path) -> None:
@@ -327,18 +358,21 @@ def test_world_state_carries_challenge_phase(tmp_path: Path) -> None:
 
 
 def test_default_resolver_tightens_on_phase_transition(tmp_path: Path) -> None:
-    # Enter @185 day 0; price jumps → >4% account gain (with F16 costs) →
-    # conservation by day 2, which resolves tighter than day 0.
-    prices = [185.0, 340.0, 340.0]
+    # A1: 4 bars (185, 185, 340, 340) → 3 decisions.
+    # Decision 0 (bar 1) = enter; fills at bar 1 open=185, P&L=0 → building.
+    # Decision 1 (bar 2) = hold; capital marks up at bar 2 close=340 → +4.2% →
+    #   phase becomes conservation on the NEXT decision (decision 2).
+    # Decision 2 (bar 3) = hold → conservation, tighter constraints.
+    prices = [185.0, 185.0, 340.0, 340.0]
     arts = [_enter_artifact(), _hold_artifact(), _hold_artifact()]
     _, loop, _ = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
-    day0 = loop.run.call_args_list[0].kwargs
-    day2 = loop.run.call_args_list[2].kwargs
-    assert day0["world_state"]["challenge_phase"] == "building"
-    assert day2["world_state"]["challenge_phase"] == "conservation"
-    assert (day2["constraints"].max_single_trade_pct
-            < day0["constraints"].max_single_trade_pct)
+    first = loop.run.call_args_list[0].kwargs
+    last = loop.run.call_args_list[-1].kwargs
+    assert first["world_state"]["challenge_phase"] == "building"
+    assert last["world_state"]["challenge_phase"] == "conservation"
+    assert (last["constraints"].max_single_trade_pct
+            < first["constraints"].max_single_trade_pct)
 
 
 def _enter_at(price: float) -> dict:
@@ -350,32 +384,40 @@ def _enter_at(price: float) -> dict:
 
 
 def test_world_state_carries_consistency_status(tmp_path: Path) -> None:
-    # Enter @100; day1 marks +500 (cumulative 500), day2 marks +500 again =
-    # 100% of prior profit → consistency "breached" surfaced day 2.
-    prices = [100.0, 110.0, 121.0]
-    arts = [_enter_at(100.0), _hold_artifact(), _hold_artifact()]
+    # A1: at decision time the agent sees YESTERDAY's realised daily P&L
+    # against the running cumulative — today's P&L hasn't happened yet.
+    # Setup: 5 bars, 4 decisions [enter, hold, hold, hold].
+    # - decision 0 (bar 1): yesterday (bar 0) had no positions → daily=0 → ok
+    # - decision 1 (bar 2): bar 1 entered at 100, day-end mark also 100 → daily=0
+    # - decision 2 (bar 3): bar 2 close=110 marks +500 → daily=+500 vs cum=+500
+    #   → daily/cum = 100% > 50% rule → 'breached' surfaced here
+    prices = [100.0, 100.0, 100.0, 110.0, 121.0]
+    arts = [_enter_at(100.0), _hold_artifact(), _hold_artifact(), _hold_artifact()]
     _, loop, _ = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
     statuses = [c.kwargs["world_state"]["consistency_status"]
                 for c in loop.run.call_args_list]
-    assert statuses[2] == "breached"
+    assert "breached" in statuses
 
 
 def test_open_positions_visible_in_portfolio_state(tmp_path: Path) -> None:
-    # Seam 0: the Player must see its book to exit it. Enter day 0; day 1's
-    # portfolio_state must carry the open position.
-    prices = [185.0, 186.0]
+    # Seam 0: the Player must see its book to exit it.
+    # A1: 3 bars → 2 decisions. Decision 0 (bar 1) enters; decision 1 (bar 2)
+    # observes the open book in portfolio_state.
+    prices = [185.0, 185.0, 186.0]
     arts = [_enter_at(185.0), _hold_artifact()]
     _, loop, _ = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path)
-    ps_day1 = loop.run.call_args_list[1].kwargs["portfolio_state"]
-    assert "P1" in [p.position_id for p in ps_day1.open_positions]
+    ps_next = loop.run.call_args_list[1].kwargs["portfolio_state"]
+    assert "P1" in [p.position_id for p in ps_next.open_positions]
 
 
 def test_monte_carlo_sets_prob_and_triggers_conservation(tmp_path: Path) -> None:
     # R1: with a realised trade, the runner computes mc_success_prob and applies
     # the trigger. One winning trade has no losses → P(pass)=0.0 (R2) → escalate
     # building → conservation.
+    # A1: 5 bars → 4 decisions [enter, exit, hold, hold]. The last decision's
+    # world_state carries the auto-escalated phase.
     loop = MagicMock()
     arts = [_enter_at(100.0), _exit_artifact(), _hold_artifact(), _hold_artifact()]
     loop.run.side_effect = arts
@@ -383,14 +425,14 @@ def test_monte_carlo_sets_prob_and_triggers_conservation(tmp_path: Path) -> None
         loop=loop, db_store=MagicMock(), strategy_id="s",
         mc_min_trades=1, mc_every=1,
     )
-    df = _make_price_df([100.0, 110.0, 110.0, 110.0])
+    df = _make_price_df([100.0, 100.0, 110.0, 110.0, 110.0])
     with patch("yfinance.Ticker") as mock_ticker:
         mock_ticker.return_value.history.return_value = df
         runner.run(symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
                    constraints=_make_constraints(), output_dir=tmp_path)
-    day3 = loop.run.call_args_list[3].kwargs["world_state"]
-    assert day3["mc_success_prob"] == 0.0
-    assert day3["challenge_phase"] == "conservation"
+    last = loop.run.call_args_list[-1].kwargs["world_state"]
+    assert last["mc_success_prob"] == 0.0
+    assert last["challenge_phase"] == "conservation"
 
 
 def _run_costs(cost_pct: float, tmp_path: Path):
@@ -419,7 +461,9 @@ def test_zero_transaction_cost_leaves_flat_trade_flat(tmp_path: Path) -> None:
 def test_winning_short_increases_pnl(tmp_path: Path) -> None:
     # Seam 0: an approved enter_short must actually take a position; a short into
     # a falling price profits.
-    prices = [100.0, 90.0]
+    # A1: 3 bars → 2 decisions. Decision 0 (bar 1) shorts at open=100, hold;
+    # bar 2 marks to close=90 → short profits.
+    prices = [100.0, 100.0, 90.0]
     short = _action_artifact({
         "action_type": "enter_short", "symbol": "AMZN", "size_pct": 0.05,
         "entry_price": 100.0, "stop_loss": 105.0, "take_profit": 90.0,
@@ -440,39 +484,47 @@ def test_world_state_carries_computed_vwap(tmp_path: Path) -> None:
 
 
 def test_exit_closes_only_one_of_duplicate_ids(tmp_path: Path) -> None:
-    # Two positions both id "P1" (day0, day1); a single exit "P1" (day2) must
-    # close exactly one, not both.
-    prices = [185.0, 185.0, 200.0]
+    # Two positions both id "P1" opened on bars 1 and 2; a single exit "P1" on
+    # bar 3 must close exactly one, not both.
+    # A1: 4 bars → 3 decisions [enter, enter, exit].
+    prices = [185.0, 185.0, 185.0, 200.0]
     arts = [_enter_artifact(), _enter_artifact(), _exit_artifact()]
     _, _, db = _run_with_prices(
         prices, artifact_factory=lambda i: arts[i], tmp_path=tmp_path
     )
-    day2 = db.save_portfolio_snapshot.call_args_list[2][0][0]
-    assert len(day2["open_positions"]) == 1
+    # Last snapshot is after the exit: one position still open.
+    last_snap = db.save_portfolio_snapshot.call_args_list[-1][0][0]
+    assert len(last_snap["open_positions"]) == 1
 
 
 def test_same_day_duplicate_entries_get_unique_ids(tmp_path: Path) -> None:
-    # One day's proposal with two id-less long entries must yield two distinct
-    # synthesized position ids, not one collided id.
+    # One decision's proposal with two id-less long entries must yield two
+    # distinct synthesized position ids, not one collided id.
+    # A1: needs ≥2 bars to make any decision; the decision fires on bar 1.
     art = _multi_action_artifact([_enter_no_id(), _enter_no_id()])
     _, _, db = _run_with_prices(
-        [185.0], artifact_factory=lambda i: art, tmp_path=tmp_path
+        [185.0, 185.0], artifact_factory=lambda i: art, tmp_path=tmp_path
     )
-    ids = db.save_portfolio_snapshot.call_args_list[0][0][0]["open_positions"]
+    # Snapshot for bar 1 is the second one written (bar 0's came first,
+    # before any decisions were possible).
+    ids = db.save_portfolio_snapshot.call_args_list[1][0][0]["open_positions"]
     assert len(ids) == 2
     assert len(set(ids)) == 2
 
 
 def test_kelly_reference_none_until_trade_closes_then_populated(tmp_path: Path) -> None:
-    # Day 0 enter P1 @185, day 1 exit @200 (a win), day 2 hold.
-    prices = [185.0, 200.0, 200.0]
+    # A1: 4 bars → 3 decisions [enter, exit, hold]. Decision 0 (bar 1) enters
+    # at open=185 — no closed trade yet. Decision 1 (bar 2) exits at open=200 —
+    # closes a +8.1% trade. Decision 2 (bar 3) is the first to see a
+    # populated kelly_fraction.
+    prices = [185.0, 185.0, 200.0, 200.0]
     artifacts = [_enter_artifact(), _exit_artifact(), _hold_artifact()]
     _, loop, _ = _run_with_prices(
         prices, artifact_factory=lambda i: artifacts[i], tmp_path=tmp_path
     )
     calls = loop.run.call_args_list
     assert calls[0].kwargs["world_state"]["kelly_fraction"] is None   # no closed trade
-    assert calls[2].kwargs["world_state"]["kelly_fraction"] is not None  # one closed
+    assert calls[-1].kwargs["world_state"]["kelly_fraction"] is not None  # one closed
 
 
 class _FakeEnricher:
@@ -530,3 +582,85 @@ def test_runner_default_resolver_applies_garch_scaling(tmp_path: Path) -> None:
     resolved = loop.run.call_args.kwargs["constraints"]
     # low_vol overlay (1.0x) then garch 0.04 → 0.5 floor → 0.05 * 0.5 = 0.025.
     assert resolved.max_single_trade_pct == 0.025
+
+
+# ============================================================================
+# A1 — Seam 0 bar-timing fidelity
+# ----------------------------------------------------------------------------
+# Today the runner uses bar t's *close* both for the decision and the fill —
+# look-ahead, since you can't trade at a close you only know after the market
+# shuts. The fix: decide using bars [0..t-1], fill at bar t's *open*. These
+# tests pin that contract.
+# ============================================================================
+
+def test_no_decision_on_first_day(tmp_path: Path) -> None:
+    # Day 0 has no prior bars. With no past data, no decision is possible —
+    # the runner appends the bar and marks to market, but does not call the
+    # CoachLoop. N bars -> N-1 decisions.
+    prices = [100.0, 110.0, 120.0]
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    assert loop.run.call_count == len(prices) - 1
+
+
+def test_decision_sees_prior_close_not_current(tmp_path: Path) -> None:
+    # The world_state.price field carries the *latest past* close (the buffer
+    # tip *before* today's bar), not today's close. If it carried today's, the
+    # agent would be peeking at intraday data it cannot have at decision time.
+    prices = [100.0, 200.0, 300.0]  # huge moves so the bug would be obvious
+    _, loop, _ = _run_with_prices(prices, tmp_path=tmp_path)
+    # First decision (loop call index 0) corresponds to bar 1. It must see
+    # day 0's close (100), not day 1's close (200).
+    first_ws = loop.run.call_args_list[0].kwargs["world_state"]
+    assert first_ws["price"] == 100.0
+    # Last decision (bar 2) sees day 1's close (200), not day 2's (300).
+    last_ws = loop.run.call_args_list[-1].kwargs["world_state"]
+    assert last_ws["price"] == 200.0
+
+
+def test_entry_fills_at_current_bar_open_not_decision_close(tmp_path: Path) -> None:
+    # An approved enter_long on bar t's decision fills at bar t's *open*.
+    # Setup: distinct open vs close. Day 1 open = 50, day 1 close = 100.
+    # An entry fired by day 1's decision should fill at 50, then end day 1
+    # marked to 100, yielding +100% on the invested fraction.
+    opens =  [50.0,  50.0, 50.0]
+    closes = [100.0, 100.0, 100.0]
+    loop = MagicMock()
+    # Day 1 decision (loop call 0) enters; day 2 decision (call 1) holds.
+    loop.run.side_effect = [_enter_artifact(), _hold_artifact()]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(symbol="AMZN", start_date="2024-01-02",
+                            end_date="2024-01-15",
+                            constraints=_make_constraints(), output_dir=tmp_path)
+    # The enter_artifact size_pct is 0.05. Entry at open=50, mark-to-market at
+    # close=100 = +100% on the position. Expected PnL = 100_000 * 0.05 = +5000.
+    # (Allow a small fudge for transaction costs, which are 0.1% round-trip.)
+    assert 4900 < result.total_pnl < 5100
+
+
+def test_exit_fills_at_current_bar_open(tmp_path: Path) -> None:
+    # An approved exit_position on bar t fills at bar t's *open*, not its close.
+    # Buy at bar 1 open (50), exit at bar 3 open (90). Days 1/2 close at 50.
+    # The exit's *fill* is 90 (open), not 200 (close).
+    opens =  [50.0,  50.0, 90.0,  90.0]
+    closes = [50.0,  50.0, 200.0, 90.0]
+    loop = MagicMock()
+    # Decision sequence (one per bar, starting bar 1):
+    loop.run.side_effect = [
+        _enter_artifact(),   # bar 1: open long → fill at 50
+        _hold_artifact(),    # bar 2: hold
+        _exit_artifact(),    # bar 3: exit → fill at 90 (NOT bar 3's close 200)
+    ]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(symbol="AMZN", start_date="2024-01-02",
+                            end_date="2024-01-15",
+                            constraints=_make_constraints(), output_dir=tmp_path)
+    # Realised return on the closed trade: (90 / 50) - 1 = +80%. With size_pct
+    # 0.05, that's +0.04 * starting capital = +4000 booked. If the runner had
+    # used bar 3's CLOSE (200), realised return would have been +300% → +15000.
+    # Use a wide window because day 3 still marks to its close (no open
+    # position by then, so close mark only affects timing, not realised P&L).
+    assert 3500 < result.total_pnl < 4500

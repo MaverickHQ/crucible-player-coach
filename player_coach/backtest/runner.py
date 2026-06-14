@@ -199,143 +199,154 @@ class BacktestRunner:
         equity_curve: list[tuple[str, float]] = []
         total_days = len(df)
         mc_prob: float | None = None
+        # A1: consistency_status at decision time looks at the MOST RECENT
+        # realized daily P&L (yesterday's MTM), since today's hasn't happened.
+        prior_daily_pnl = 0.0
 
         for day_index, (date, row) in enumerate(df.iterrows()):
+            today_open = float(row["Open"])
             close = float(row["Close"])
             high = float(row["High"])
             low = float(row["Low"])
             volume = int(row["Volume"])
-            buffer.append(
-                open=float(row["Open"]),
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-            )
-            closes = buffer.closes
 
-            daily_pnl = sum(p.daily_change(close) for p in open_positions)
+            # A1 — Seam 0 bar-timing fidelity. The decision uses the buffer
+            # *before* today's bar is appended (so the agent sees only data
+            # through yesterday), and any approved entry/exit fills at TODAY's
+            # OPEN — the first price you could realistically transact at.
+            # Mark-to-market still happens at today's close at the end of the
+            # iteration. Day 0 has no prior bars, so it can't make a decision —
+            # we just append the bar and mark to market.
+            artifact: dict | None = None
+            outcome: str | None = None
+            termination_reason: str | None = None
+            phase: str | None = None
 
-            portfolio_state = PortfolioState(
-                capital=capital,
-                daily_starting_balance=daily_starting_balance,
-                peak_capital=peak_capital,
-                cash_available=cash_available,
-                # Seam 0: the Player sees its open book and can propose exits.
-                open_positions=list(open_positions),
-                daily_pnl=daily_pnl,
-                cumulative_pnl=cumulative_pnl,
-            )
+            if day_index > 0:
+                closes = buffer.closes  # buffer holds bars [0..day_index-1]
+                prior_close = float(closes[-1])
 
-            # F14: recompute P(pass) on a cadence once enough trades have closed.
-            if (len(realized_trade_returns) >= self._mc_min_trades
-                    and day_index % self._mc_every == 0):
-                mc_prob = simulate_challenge(
-                    trade_stats(realized_trade_returns),
-                    profit_target=self._profit_target,
-                    drawdown_limit=constraints.trailing_max_drawdown_pct,
-                    days_remaining=max(0, total_days - day_index),
-                    trades_per_day=self._mc_trades_per_day,
-                    n_paths=self._mc_paths,
-                ).success_probability
+                # F14: recompute P(pass) on cadence.
+                if (len(realized_trade_returns) >= self._mc_min_trades
+                        and day_index % self._mc_every == 0):
+                    mc_prob = simulate_challenge(
+                        trade_stats(realized_trade_returns),
+                        profit_target=self._profit_target,
+                        drawdown_limit=constraints.trailing_max_drawdown_pct,
+                        days_remaining=max(0, total_days - day_index),
+                        trades_per_day=self._mc_trades_per_day,
+                        n_paths=self._mc_paths,
+                    ).success_probability
 
-            # F12: challenge profit fraction (from the prior day's close) drives
-            # the phase; F14 escalates building→conservation when P(pass) is low.
-            challenge_pnl_pct = (
-                cumulative_pnl / initial_capital if initial_capital else 0.0
-            )
-            phase = apply_monte_carlo_trigger(
-                challenge_phase(challenge_pnl_pct), mc_prob
-            )
-            world_state_obj = WorldState(
-                symbol=symbol,
-                price=close,
-                sma5=_compute_sma(closes, 5),
-                sma10=_compute_sma(closes, 10),
-                volume=volume,
-                challenge_pnl_pct=challenge_pnl_pct,
-                challenge_phase=phase,
-                consistency_status=constraints.consistency_status(
-                    daily_pnl, cumulative_pnl
-                ),
-                mc_success_prob=mc_prob,
-            )
-            # F6: write regime_label/regime_probability, then resolve the
-            # effective constraints for this regime (conservative if unknown).
-            self._enricher.enrich(world_state_obj, buffer)
-            world_state: dict[str, Any] = world_state_obj.to_dict()
-            resolved_constraints = self._resolver.resolve(constraints, world_state)
-
-            # F10: half-Kelly sizing reference from realised trades so far,
-            # capped by the effective per-trade limit. None until a trade closes.
-            stats = trade_stats(realized_trade_returns)
-            if stats.count > 0:
-                world_state["kelly_fraction"] = half_kelly(
-                    stats, cap=resolved_constraints.max_single_trade_pct
+                portfolio_state = PortfolioState(
+                    capital=capital,
+                    daily_starting_balance=daily_starting_balance,
+                    peak_capital=peak_capital,
+                    cash_available=cash_available,
+                    # Seam 0: the Player sees its open book and can propose exits.
+                    open_positions=list(open_positions),
+                    daily_pnl=0.0,           # no MTM applied yet — decision time
+                    cumulative_pnl=cumulative_pnl,
                 )
 
-            artifact = self._loop.run(
-                world_state=world_state,
-                constraints=resolved_constraints,
-                portfolio_state=portfolio_state,
-                db_store=self._db_store,
-                strategy_id=self._strategy_id,
-                output_dir=output_dir,
-            )
-            exchanges.append(artifact)
-            days_run += 1
+                challenge_pnl_pct = (
+                    cumulative_pnl / initial_capital if initial_capital else 0.0
+                )
+                phase = apply_monte_carlo_trigger(
+                    challenge_phase(challenge_pnl_pct), mc_prob
+                )
+                world_state_obj = WorldState(
+                    symbol=symbol,
+                    price=prior_close,  # yesterday's close — past data only
+                    sma5=_compute_sma(closes, 5),
+                    sma10=_compute_sma(closes, 10),
+                    volume=volume,
+                    challenge_pnl_pct=challenge_pnl_pct,
+                    challenge_phase=phase,
+                    consistency_status=constraints.consistency_status(
+                        prior_daily_pnl, cumulative_pnl
+                    ),
+                    mc_success_prob=mc_prob,
+                )
+                self._enricher.enrich(world_state_obj, buffer)
+                world_state: dict[str, Any] = world_state_obj.to_dict()
+                resolved_constraints = self._resolver.resolve(
+                    constraints, world_state
+                )
 
-            outcome = artifact.get("outcome")
-            termination_reason = artifact.get("termination_reason")
+                stats = trade_stats(realized_trade_returns)
+                if stats.count > 0:
+                    world_state["kelly_fraction"] = half_kelly(
+                        stats, cap=resolved_constraints.max_single_trade_pct
+                    )
 
-            if outcome == "APPROVE":
-                for action in artifact.get("rounds", [{}])[-1].get(
-                    "proposal", {}
-                ).get("actions", []):
-                    action_type = action.get("action_type")
-                    if action_type in ("enter_long", "enter_short"):
-                        direction = "short" if action_type == "enter_short" else "long"
-                        size_pct = float(action.get("size_pct", 0.0))
-                        entry_price = float(action.get("entry_price", close))
-                        cost = capital * size_pct
-                        # Unique synthesized id so two id-less same-day entries
-                        # are distinguishable (a shared id would let one exit
-                        # close both).
-                        pid = (
-                            action.get("position_id")
-                            or f"{symbol}-{date}-{position_seq}-{direction}"
-                        )
-                        position_seq += 1
-                        open_positions.append(
-                            _RunnerPosition(
-                                symbol=symbol,
-                                size_pct=size_pct,
-                                entry_price=entry_price,
-                                cost=cost,
-                                position_id=pid,
-                                direction=direction,
-                                prev_close=entry_price,
+                artifact = self._loop.run(
+                    world_state=world_state,
+                    constraints=resolved_constraints,
+                    portfolio_state=portfolio_state,
+                    db_store=self._db_store,
+                    strategy_id=self._strategy_id,
+                    output_dir=output_dir,
+                )
+                exchanges.append(artifact)
+                outcome = artifact.get("outcome")
+                termination_reason = artifact.get("termination_reason")
+
+                if outcome == "APPROVE":
+                    for action in artifact.get("rounds", [{}])[-1].get(
+                        "proposal", {}
+                    ).get("actions", []):
+                        action_type = action.get("action_type")
+                        if action_type in ("enter_long", "enter_short"):
+                            direction = (
+                                "short" if action_type == "enter_short" else "long"
                             )
-                        )
-                        cash_available -= cost
-                        cash_available -= cost * self._transaction_cost_pct / 2.0
-                    elif action_type == "exit_position":
-                        pid = action.get("position_id")
-                        if pid is None:
-                            continue  # nothing identifiable to close
-                        # An exit closes exactly one position — the first match.
-                        for i, pos in enumerate(open_positions):
-                            if pos.position_id == pid:
-                                cash_available += pos.value(close)
-                                cash_available -= (
-                                    pos.cost * self._transaction_cost_pct / 2.0
+                            size_pct = float(action.get("size_pct", 0.0))
+                            # Fill at today's OPEN — the actionable price.
+                            entry_price = today_open
+                            cost = capital * size_pct
+                            pid = (
+                                action.get("position_id")
+                                or f"{symbol}-{date}-{position_seq}-{direction}"
+                            )
+                            position_seq += 1
+                            open_positions.append(
+                                _RunnerPosition(
+                                    symbol=symbol, size_pct=size_pct,
+                                    entry_price=entry_price, cost=cost,
+                                    position_id=pid, direction=direction,
+                                    prev_close=entry_price,
                                 )
-                                realized_trade_returns.append(
-                                    pos.realized_return(close)
-                                )
-                                del open_positions[i]
-                                break
+                            )
+                            cash_available -= cost
+                            cash_available -= (
+                                cost * self._transaction_cost_pct / 2.0
+                            )
+                        elif action_type == "exit_position":
+                            pid = action.get("position_id")
+                            if pid is None:
+                                continue
+                            for i, pos in enumerate(open_positions):
+                                if pos.position_id == pid:
+                                    # Exit fills at today's OPEN.
+                                    cash_available += pos.value(today_open)
+                                    cash_available -= (
+                                        pos.cost
+                                        * self._transaction_cost_pct
+                                        / 2.0
+                                    )
+                                    realized_trade_returns.append(
+                                        pos.realized_return(today_open)
+                                    )
+                                    del open_positions[i]
+                                    break
 
+            # End-of-day: append today's bar, mark to market at today's close.
+            buffer.append(
+                open=today_open, high=high, low=low,
+                close=close, volume=volume,
+            )
+            daily_pnl = sum(p.daily_change(close) for p in open_positions)
             position_value = sum(p.value(close) for p in open_positions)
             capital = cash_available + position_value
             peak_capital = max(peak_capital, capital)
@@ -344,6 +355,8 @@ class BacktestRunner:
             equity_curve.append((str(date)[:10], capital))
             for p in open_positions:
                 p.prev_close = close
+            prior_daily_pnl = daily_pnl  # the freshly-realised day P&L
+            days_run += 1
 
             self._db_store.save_portfolio_snapshot({
                 "strategy_id": self._strategy_id,
