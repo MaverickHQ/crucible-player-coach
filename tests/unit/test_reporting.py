@@ -4,6 +4,7 @@ from player_coach.backtest.reporting import (
     backtest_metrics,
     format_progress_status,
     metric_caveats,
+    mode_label,
     regime_breakdown,
     short_range_warnings,
     walk_forward_report,
@@ -138,3 +139,33 @@ def test_metric_caveats_silent_when_metrics_are_normal():
         "mc_success_prob": 0.6, "total_return": 0.04,
     })
     assert caveats == []
+
+
+# ---------------------------------------------------------- Fast/Standard (T3)
+
+def test_backtest_metrics_carries_mode_label():
+    r = _result(sharpe=1.0)
+    assert backtest_metrics(r, mode="fast")["mode"] == "fast"
+    assert backtest_metrics(r, mode="standard")["mode"] == "standard"
+
+
+def test_metric_caveats_emits_fast_mode_note():
+    caveats = metric_caveats({
+        "max_drawdown": 0.05, "sharpe": 1.0, "mc_success_prob": 0.6,
+        "total_return": 0.03, "mode": "fast",
+    })
+    assert any("fast mode" in c.lower() and "revision" in c.lower()
+               for c in caveats)
+
+
+def test_metric_caveats_silent_for_standard_mode():
+    caveats = metric_caveats({
+        "max_drawdown": 0.05, "sharpe": 1.0, "mc_success_prob": 0.6,
+        "total_return": 0.03, "mode": "standard",
+    })
+    assert not any("fast mode" in c.lower() for c in caveats)
+
+
+def test_mode_label_renders_human_strings():
+    assert "Fast" in mode_label("fast")
+    assert "Standard" in mode_label("standard")

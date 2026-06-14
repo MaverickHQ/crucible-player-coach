@@ -12,13 +12,17 @@ if TYPE_CHECKING:
     from player_coach.backtest.runner import BacktestResult
 
 
-def backtest_metrics(result: BacktestResult) -> dict[str, float]:
+def backtest_metrics(
+    result: BacktestResult, mode: str | None = None
+) -> dict[str, Any]:
     """Labelled evaluation metrics for a backtest result.
 
     Single place the dashboard (and any ranking) reads the Phase 4A metrics from,
-    so the display stays in sync with what the runner computes.
+    so the display stays in sync with what the runner computes. ``mode`` —
+    ``"fast"`` (max_rounds=1, no revisions) or ``"standard"`` (max_rounds=3) —
+    flows through so the panel can label what was actually run.
     """
-    return {
+    out: dict[str, Any] = {
         "total_return": result.total_pnl_pct,
         "max_drawdown": result.max_drawdown_pct,
         "sharpe": result.sharpe,
@@ -28,6 +32,16 @@ def backtest_metrics(result: BacktestResult) -> dict[str, float]:
         "avg_recovery_time": result.avg_recovery_time,
         "mc_success_prob": result.mc_success_prob,
     }
+    if mode is not None:
+        out["mode"] = mode
+    return out
+
+
+def mode_label(mode: str) -> str:
+    """Human-readable label for the backtest depth (`fast` / `standard`)."""
+    return {"fast": "Fast (1 round)", "standard": "Standard (3 rounds)"}.get(
+        mode, mode.title()
+    )
 
 
 def regime_breakdown(result: BacktestResult) -> dict[str, dict[str, Any]]:
@@ -77,6 +91,12 @@ def metric_caveats(metrics: dict[str, float]) -> list[str]:
         out.append(
             "P(pass) = 0% is the expected projection from a loss — the realised "
             "edge has no winning trades to extrapolate from."
+        )
+    if metrics.get("mode") == "fast":
+        out.append(
+            "Fast mode: revisions disabled (max_rounds=1). Approval rate "
+            "reflects first-round agreement only — re-run in Standard before "
+            "drawing strong conclusions."
         )
     return out
 

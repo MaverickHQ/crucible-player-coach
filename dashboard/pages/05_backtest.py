@@ -98,8 +98,10 @@ def _fmt_dd(value: float) -> str:
 
 def _render_metrics_panel(m: dict) -> None:
     """Render the Phase 4A evaluation metrics + regime breakdown for both runs."""
-    from player_coach.backtest.reporting import metric_caveats
+    from player_coach.backtest.reporting import metric_caveats, mode_label
 
+    if m.get("mode"):
+        st.caption(f"Backtest depth: **{mode_label(m['mode'])}**")
     st.markdown("**Risk-adjusted metrics**")
     for col, label, key in zip(
         st.columns(2), (m["label_a"], m["label_b"]), ("a", "b")
@@ -162,6 +164,19 @@ with st.sidebar:
     default_start = default_end - timedelta(days=180)
     start_date = st.date_input("Start date", value=default_start)
     end_date = st.date_input("End date", value=default_end)
+    depth = st.radio(
+        "Backtest depth",
+        ["Fast (1 round)", "Standard (3 rounds)"],
+        index=0,  # Fast is the new default — best for iteration
+        help=(
+            "Fast: max_rounds=1 — the Coach approves or rejects in one shot, "
+            "no revisions. ~40–60% cheaper and faster, best for quick "
+            "comparisons. Standard: max_rounds=3 — the Coach can ask the "
+            "Player to revise, more realistic for serious A/B."
+        ),
+    )
+    mode = "fast" if depth.startswith("Fast") else "standard"
+    max_rounds = 1 if mode == "fast" else 3
     st.divider()
     run_clicked = st.button("Run Backtest", type="primary", width='stretch')
 
@@ -203,8 +218,14 @@ if run_clicked:
         strategy_id_a = f"bt-{preset_a}-{symbol}-{start_date}-{uuid.uuid4().hex[:6]}"
         strategy_id_b = f"bt-{preset_b}-{symbol}-{start_date}-{uuid.uuid4().hex[:6]}"
 
-        constraints_a = ConstraintSchema.from_dict(_PRESETS[preset_a])
-        constraints_b = ConstraintSchema.from_dict(_PRESETS[preset_b])
+        # Apply the selected depth — Fast (1 round) for iteration, Standard
+        # (3 rounds) for full LLM revision fidelity.
+        constraints_a = ConstraintSchema.from_dict(
+            {**_PRESETS[preset_a], "max_rounds": max_rounds}
+        )
+        constraints_b = ConstraintSchema.from_dict(
+            {**_PRESETS[preset_b], "max_rounds": max_rounds}
+        )
 
         def _make_loop(key: str) -> CoachLoop:
             return CoachLoop(
@@ -264,7 +285,7 @@ if run_clicked:
             Writes to disk (recovery), DB (Prior runs), and session_state — so a
             disconnect after this returns can't lose what we just earned.
             """
-            metrics = backtest_metrics(result)
+            metrics = backtest_metrics(result, mode=mode)
             preset_snapshot = {
                 "label": label,
                 "symbol": symbol,
@@ -286,6 +307,7 @@ if run_clicked:
             partial = st.session_state.get("last_metrics") or {
                 "label_a": preset_a, "label_b": preset_b,
             }
+            partial["mode"] = mode
             slot = "a" if label == preset_a else "b"
             partial[slot] = metrics
             partial[f"regime_{slot}"] = preset_snapshot["regime"]
