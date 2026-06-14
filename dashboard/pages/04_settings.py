@@ -24,7 +24,7 @@ key_input = st.text_input(
 col_validate, col_clear = st.columns(2)
 
 with col_validate:
-    if st.button("Validate Key", use_container_width=True):
+    if st.button("Validate Key", width='stretch'):
         try:
             import anthropic
             anthropic.Anthropic(api_key=key_input).models.list()
@@ -36,7 +36,7 @@ with col_validate:
             st.error(f"Invalid key: {e}")
 
 with col_clear:
-    if st.button("Clear Key", use_container_width=True):
+    if st.button("Clear Key", width='stretch'):
         st.session_state.api_key = None
         st.session_state.api_key_valid = False
         st.info("Key cleared")

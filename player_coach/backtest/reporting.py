@@ -35,6 +35,52 @@ def regime_breakdown(result: BacktestResult) -> dict[str, dict[str, Any]]:
     return decompose_by_regime(result.exchanges)
 
 
+# Minimum spans for the Phase 4A surfacing layers to produce non-trivial output.
+# F15 walk-forward needs at least fit+eval (60+30) days for one fold;
+# F6 HMM needs 30 daily returns (i.e. ~31 bars) to fit its 2-state model.
+_WALK_FORWARD_MIN_DAYS = 90
+_REGIME_MIN_DAYS = 31
+
+
+def short_range_warnings(business_days: int) -> list[str]:
+    """User-facing warnings when the chosen backtest range is too short to
+    produce non-trivial 4A surfacing — empty when the window is ample."""
+    msgs: list[str] = []
+    if business_days < _WALK_FORWARD_MIN_DAYS:
+        msgs.append(
+            f"Walk-forward needs at least {_WALK_FORWARD_MIN_DAYS} trading days "
+            f"for one fold; only {business_days} requested → OOS Sharpe will be 0."
+        )
+    if business_days < _REGIME_MIN_DAYS:
+        msgs.append(
+            f"Regime detection needs at least {_REGIME_MIN_DAYS} trading days "
+            f"before the HMM can fit; before that the label stays 'unknown'."
+        )
+    return msgs
+
+
+def metric_caveats(metrics: dict[str, float]) -> list[str]:
+    """Caveats to display next to the metrics panel — explains apparent
+    paradoxes (tiny drawdown but big Calmar, 0% P(pass) on a losing run) so the
+    reader can tell *data* limits from *code* problems."""
+    out: list[str] = []
+    mdd = float(metrics.get("max_drawdown", 0.0))
+    # 0 < mdd < 0.001 (0.1%) — the panel rounds it to 0.0% but Sharpe/Calmar
+    # still divide by it, producing apparently mysterious values.
+    if 0.0 < mdd < 0.001:
+        out.append(
+            "Max drawdown is tiny (<0.1%) — Sharpe / Calmar magnify near-zero "
+            "denominators and may look out of scale."
+        )
+    if (float(metrics.get("mc_success_prob", 0.0)) == 0.0
+            and float(metrics.get("total_return", 0.0)) <= 0.0):
+        out.append(
+            "P(pass) = 0% is the expected projection from a loss — the realised "
+            "edge has no winning trades to extrapolate from."
+        )
+    return out
+
+
 def format_progress_status(payload: dict[str, Any]) -> str:
     """Render a one-line status from a runner ``on_day`` callback payload.
 

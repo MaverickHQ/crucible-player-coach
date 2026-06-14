@@ -3,7 +3,9 @@ from __future__ import annotations
 from player_coach.backtest.reporting import (
     backtest_metrics,
     format_progress_status,
+    metric_caveats,
     regime_breakdown,
+    short_range_warnings,
     walk_forward_report,
 )
 from player_coach.backtest.runner import BacktestResult
@@ -93,3 +95,46 @@ def test_progress_status_handles_missing_mc_prob():
     s = format_progress_status(_payload(mc_success_prob=None))
     # No KeyError, no None leaking into the string.
     assert "None" not in s
+
+
+# ---------------------------------------------------- short-range guidance (#3)
+
+def test_short_range_flags_walk_forward_when_under_90_days():
+    w = short_range_warnings(30)
+    assert any("walk-forward" in m.lower() for m in w)
+
+
+def test_short_range_flags_regime_when_under_30_days():
+    w = short_range_warnings(20)
+    assert any("regime" in m.lower() for m in w)
+
+
+def test_short_range_quiet_for_ample_window():
+    assert short_range_warnings(180) == []
+
+
+# --------------------------------------------- metric caveats (#1 / #4)
+
+def test_metric_caveats_flags_tiny_max_drawdown():
+    # A tiny but non-zero DD makes Sharpe/Calmar look mysteriously large.
+    caveats = metric_caveats({
+        "max_drawdown": 0.0004, "sharpe": -2.59,
+        "mc_success_prob": 0.5, "total_return": -0.0003,
+    })
+    assert any("drawdown" in c.lower() and "tiny" in c.lower() for c in caveats)
+
+
+def test_metric_caveats_explains_zero_pass_prob_on_losses():
+    caveats = metric_caveats({
+        "max_drawdown": 0.05, "sharpe": -1.0,
+        "mc_success_prob": 0.0, "total_return": -0.01,
+    })
+    assert any("p(pass)" in c.lower() and "loss" in c.lower() for c in caveats)
+
+
+def test_metric_caveats_silent_when_metrics_are_normal():
+    caveats = metric_caveats({
+        "max_drawdown": 0.05, "sharpe": 1.5,
+        "mc_success_prob": 0.6, "total_return": 0.04,
+    })
+    assert caveats == []

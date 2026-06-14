@@ -99,7 +99,7 @@ def render_round(round_dict: dict, expanded: bool = True) -> None:
         if actions:
             st.markdown("**Proposed Actions**")
             rows = [{c: a.get(c, "—") for c in _ACTION_COLS} for a in actions]
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, width='stretch', hide_index=True)
         else:
             st.caption("No actions proposed.")
 

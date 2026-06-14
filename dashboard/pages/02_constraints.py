@@ -122,7 +122,7 @@ st.divider()
 btn_save, btn_export, btn_use = st.columns(3)
 
 with btn_save:
-    if st.button("Save as Profile", use_container_width=True):
+    if st.button("Save as Profile", width='stretch'):
         st.session_state["_save_profile_open"] = True
 
     if st.session_state.get("_save_profile_open"):
@@ -143,11 +143,11 @@ with btn_export:
         data=json.dumps(values, indent=2),
         file_name="constraints.json",
         mime="application/json",
-        use_container_width=True,
+        width='stretch',
     )
 
 with btn_use:
-    if st.button("Use in Exchange", use_container_width=True):
+    if st.button("Use in Exchange", width='stretch'):
         st.session_state.constraint_profile = values
         st.success("Constraint profile updated")
 

@@ -193,7 +193,7 @@ with st.sidebar:
             )
 
     st.divider()
-    run_clicked = st.button("Run Exchange", type="primary", use_container_width=True)
+    run_clicked = st.button("Run Exchange", type="primary", width='stretch')
 
 # ---------------------------------------------------------------------------
 # Page title + character area

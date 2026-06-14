@@ -84,8 +84,22 @@ def _render_record(rec: dict) -> None:
 # Sidebar
 # ---------------------------------------------------------------------------
 
+def _fmt_dd(value: float) -> str:
+    """Format a drawdown fraction with enough precision to be informative.
+
+    Tiny drawdowns (< 0.1%) would round to 0.0% under :.1%, making Sharpe/Calmar
+    look paradoxical next to a "0% DD". Fall back to two decimal places for the
+    small case so the reader can see what's actually there.
+    """
+    if 0.0 < value < 0.001:
+        return f"{value:.2%}"
+    return f"{value:.1%}"
+
+
 def _render_metrics_panel(m: dict) -> None:
     """Render the Phase 4A evaluation metrics + regime breakdown for both runs."""
+    from player_coach.backtest.reporting import metric_caveats
+
     st.markdown("**Risk-adjusted metrics**")
     for col, label, key in zip(
         st.columns(2), (m["label_a"], m["label_b"]), ("a", "b")
@@ -93,15 +107,22 @@ def _render_metrics_panel(m: dict) -> None:
         with col:
             st.caption(label)
             mm = m[key]
-            st.metric("P(pass)", f"{mm['mc_success_prob']:.0%}")
+            st.metric(
+                "P(pass)", f"{mm['mc_success_prob']:.0%}",
+                help=("Projected challenge pass probability from the realised "
+                      "edge of this run. With losses, expect 0% — there are no "
+                      "winning trades to extrapolate from."),
+            )
             st.metric("Sharpe", f"{mm['sharpe']:.2f}")
             st.metric("Sortino", f"{mm['sortino']:.2f}")
             st.metric("Calmar", f"{mm['calmar']:.2f}")
-            st.metric("Max DD", f"{mm['max_drawdown']:.1%}")
+            st.metric("Max DD", _fmt_dd(mm["max_drawdown"]))
             st.caption(
                 f"DD duration {mm['max_drawdown_duration']}d · "
                 f"avg recovery {mm['avg_recovery_time']:.1f}d"
             )
+            for caveat in metric_caveats(mm):
+                st.caption(f"ℹ️ {caveat}")
     st.markdown("**Walk-forward** (out-of-sample, 60/30 anchored)")
     for col, label, key in zip(
         st.columns(2), (m["label_a"], m["label_b"]), ("wf_a", "wf_b")
@@ -136,11 +157,13 @@ with st.sidebar:
     preset_b = st.selectbox("Preset B", preset_names, index=2)
     symbol = st.selectbox("Symbol", ["AMZN", "MSFT", "TSLA", "BTC-USD"])
     default_end = date.today() - timedelta(days=1)
-    default_start = default_end - timedelta(days=29)
+    # 6 months ≈ ~125 trading days — long enough for one walk-forward fold and
+    # an HMM regime fit; users can shorten if they want a quick run.
+    default_start = default_end - timedelta(days=180)
     start_date = st.date_input("Start date", value=default_start)
     end_date = st.date_input("End date", value=default_end)
     st.divider()
-    run_clicked = st.button("Run Backtest", type="primary", use_container_width=True)
+    run_clicked = st.button("Run Backtest", type="primary", width='stretch')
 
 # ---------------------------------------------------------------------------
 # Page title
@@ -159,6 +182,13 @@ if run_clicked:
     elif start_date >= end_date:
         st.error("Start date must be before end date.")
     else:
+        # ~Trading-day estimate from the calendar gap (5/7 weekdays).
+        from player_coach.backtest.reporting import short_range_warnings
+        approx_business_days = max(
+            1, int((end_date - start_date).days * 5 / 7)
+        )
+        for msg in short_range_warnings(approx_business_days):
+            st.info(msg)
         from player_coach.agents.coach import CoachAgent
         from player_coach.agents.player import PlayerAgent
         from player_coach.artifacts.writer import ArtifactWriter
