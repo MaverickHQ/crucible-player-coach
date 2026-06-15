@@ -338,13 +338,34 @@ if run_clicked:
         # free to finish and persist normally.
         from dashboard.parallel import run_parallel
 
+        # R3 — attach this script's Streamlit ScriptRunContext to each worker
+        # thread before it runs. Without this, panel.bar.progress / .caption /
+        # .line_chart calls from the worker are silently dropped on Streamlit
+        # ≥1.25 (the progress bars look frozen on Cloud). The import is
+        # private API and may move between Streamlit releases — thread_init's
+        # try/except guard in run_parallel keeps a future API change from
+        # crashing the backtest; in that case the UI just goes silent.
+        import threading
+        try:
+            from streamlit.runtime.scriptrunner import (
+                add_script_run_ctx,
+                get_script_run_ctx,
+            )
+            _ctx = get_script_run_ctx()
+
+            def _attach_ctx() -> None:
+                add_script_run_ctx(threading.current_thread(), _ctx)
+        except Exception:
+            _attach_ctx = None  # type: ignore[assignment]
+
         outcomes = run_parallel(
             {
                 "a": (preset_a, lambda label, _on_event:
                       _runner(strategy_id_a, constraints_a, panels["a"])),
                 "b": (preset_b, lambda label, _on_event:
                       _runner(strategy_id_b, constraints_b, panels["b"])),
-            }
+            },
+            thread_init=_attach_ctx,
         )
 
         if outcomes["a"].error and outcomes["b"].error:

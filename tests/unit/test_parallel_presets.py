@@ -96,3 +96,91 @@ def test_per_preset_callbacks_do_not_cross_talk():
 def test_returns_preset_outcome_objects():
     out = run_parallel({"a": ("A", lambda _l, _e: 1)})
     assert isinstance(out["a"], PresetOutcome)
+
+
+# ------------------------------------------------ R3: thread_init for ScriptRunContext
+
+
+def test_thread_init_runs_once_per_submit():
+    # R3 — the dashboard's worker threads call Streamlit widget mutations
+    # (panel["bar"].progress, .caption, .line_chart). Without a
+    # ScriptRunContext attached, those mutations silently no-op on
+    # Streamlit ≥1.25 (the progress UI looks frozen on Cloud). The fix is
+    # a ``thread_init`` hook called once per submit before the worker
+    # runs; the page passes a lambda that calls add_script_run_ctx so the
+    # ctx is reattached every time, even if the pool reuses a thread.
+    lock = threading.Lock()
+    init_threads: list[int] = []
+
+    def init():
+        with lock:
+            init_threads.append(threading.get_ident())
+
+    def worker(_label, _on_event):
+        # Sleep so both workers stay alive concurrently — guarantees the
+        # pool spins up two threads, matching real backtests (long I/O on
+        # every bar).
+        time.sleep(0.2)
+        return "ok"
+
+    run_parallel(
+        {"a": ("A", worker), "b": ("B", worker)},
+        thread_init=init,
+    )
+    # Two submits → two thread-init invocations, one per concurrent worker.
+    assert len(init_threads) == 2
+    assert len(set(init_threads)) == 2
+
+
+def test_thread_init_runs_before_worker_on_same_thread():
+    # R3 — init must run BEFORE the worker on the SAME thread (otherwise
+    # the worker's widget mutations fire without a ctx). Capture an
+    # ordered event log keyed by thread id.
+    lock = threading.Lock()
+    events: list[tuple[int, str]] = []
+
+    def init():
+        with lock:
+            events.append((threading.get_ident(), "init"))
+
+    def worker(_label, _on_event):
+        with lock:
+            events.append((threading.get_ident(), "work"))
+        return "ok"
+
+    run_parallel(
+        {"a": ("A", worker), "b": ("B", worker)},
+        thread_init=init,
+    )
+    # For each thread, init appears strictly before work.
+    by_thread: dict[int, list[str]] = {}
+    for tid, kind in events:
+        by_thread.setdefault(tid, []).append(kind)
+    for tid, ordered in by_thread.items():
+        assert ordered.index("init") < ordered.index("work"), (
+            f"thread {tid}: init must precede work, got {ordered}"
+        )
+
+
+def test_thread_init_none_is_backwards_compatible():
+    # R3 — existing callers don't pass thread_init; the helper must keep
+    # working unchanged (otherwise we break every existing test in this
+    # file).
+    out = run_parallel({"a": ("A", lambda _l, _e: 42)})
+    assert out["a"].result == 42
+
+
+def test_thread_init_failure_does_not_kill_worker():
+    # R3 — Streamlit internals change between versions; if the
+    # ctx-attach call fails (e.g. private API moved), the page's
+    # observable behaviour should be "progress bar doesn't update",
+    # not "backtest crashes". The worker still runs to completion.
+    def init():
+        raise RuntimeError("streamlit API moved")
+
+    out = run_parallel(
+        {"a": ("A", lambda _l, _e: "won")},
+        thread_init=init,
+    )
+    assert out["a"].result == "won"
+    assert out["a"].error is None

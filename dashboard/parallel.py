@@ -5,14 +5,17 @@ no payoff. This runs each as a thread in a fixed pool, isolates failures so a
 crash in one preset can't derail the other, and routes each preset's progress
 events to its own callback.
 
-Streamlit is thread-safe for `st.empty()` / `st.progress()` / `st.line_chart()`
-mutations *if* the thread carrying the script context calls them. We don't
-need that here — the dashboard's `_on_day` closure captures the placeholders
-at submission time, and the worker thread invokes the callback directly.
-Tested behaviour is the contract; the page is a thin renderer over it.
+R3 — Streamlit widget mutations (`st.empty()`, `st.progress()`,
+`st.line_chart()`) made from a thread without a ScriptRunContext attached are
+silently dropped on Streamlit ≥1.25 (logs `NoSessionContext` and updates the
+wrong session). The dashboard's `_on_day` closure mutates exactly such
+widgets, so the page needs to attach its own ctx to each worker thread before
+the worker runs. ``thread_init`` is the seam: a Streamlit-agnostic callable
+the caller can wire to ``add_script_run_ctx(threading.current_thread(), ctx)``.
 """
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -33,6 +36,7 @@ class PresetOutcome:
 def run_parallel(
     jobs: dict[str, tuple[str, PresetWorker]],
     on_events: dict[str, Callable[[Any], None]] | None = None,
+    thread_init: Callable[[], None] | None = None,
 ) -> dict[str, PresetOutcome]:
     """Run each ``(label, worker)`` job concurrently, returning per-slot
     outcomes.
@@ -42,14 +46,41 @@ def run_parallel(
     worker receives a no-op callback if no entry is provided. Worker exceptions
     are captured on the corresponding ``PresetOutcome.error`` — they never
     propagate out, so one preset failing leaves the other free to finish.
+
+    ``thread_init`` is called once per worker thread, on that thread, before
+    the worker runs. The dashboard uses this to attach a Streamlit
+    ScriptRunContext via ``add_script_run_ctx(threading.current_thread(), ctx)``
+    so widget mutations the worker fires (progress bar, sparkline) land in
+    the right session. An exception inside ``thread_init`` is swallowed so a
+    Streamlit-internals change can't crash a long backtest — the observable
+    failure mode becomes "progress UI looks frozen", not "run aborted".
     """
     on_events = on_events or {}
     noop: Callable[[Any], None] = lambda _e: None  # noqa: E731
     outcomes: dict[str, PresetOutcome] = {}
 
-    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
+    def _attached(worker: PresetWorker, label: str,
+                  on_event: Callable[[Any], None]) -> Any:
+        if thread_init is not None:
+            try:
+                thread_init()
+            except Exception:
+                # Surface as "UI silent" rather than "run dies". A future
+                # Streamlit version that moves add_script_run_ctx would
+                # otherwise abort every parallel backtest on first call.
+                pass
+        return worker(label, on_event)
+
+    # Re-create the thread pool per call (matches the prior behaviour); each
+    # worker carries the attached ctx so per-call workers see the right
+    # session even if Streamlit reuses thread pool threads internally elsewhere.
+    with ThreadPoolExecutor(
+        max_workers=max(1, len(jobs)),
+        thread_name_prefix="bt-preset",
+    ) as pool:
         futures = {
-            slot: pool.submit(worker, label, on_events.get(slot, noop))
+            slot: pool.submit(_attached, worker, label,
+                              on_events.get(slot, noop))
             for slot, (label, worker) in jobs.items()
         }
         for slot, future in futures.items():
@@ -59,3 +90,9 @@ def run_parallel(
                 outcomes[slot] = PresetOutcome(error=exc)
 
     return outcomes
+
+
+# Silence the unused-import lint; ``threading`` is part of the public contract
+# documented in the docstring (callers wire `threading.current_thread()` into
+# `add_script_run_ctx`).
+_ = threading
