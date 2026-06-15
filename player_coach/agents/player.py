@@ -149,10 +149,9 @@ def _build_user_prompt(
             f"Open positions: {positions_summary}"
         )
 
-    parts.append(
-        "## Constraints\n"
-        + json.dumps(constraints.to_dict(), indent=2)
-    )
+    # N10 — use the schema's cached JSON; resolved per day, identical across
+    # rounds, so the serialization runs once per bar rather than per call.
+    parts.append("## Constraints\n" + constraints.to_json())
     if patterns:
         lines = ["## Relevant patterns (from coach memory)"]
         for p in patterns:

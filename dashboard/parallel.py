@@ -86,7 +86,11 @@ def run_parallel(
         for slot, future in futures.items():
             try:
                 outcomes[slot] = PresetOutcome(result=future.result())
-            except BaseException as exc:  # noqa: BLE001 — isolate everything
+            except Exception as exc:  # noqa: BLE001 — isolate worker bugs
+                # R5 — narrowed from BaseException so KeyboardInterrupt /
+                # SystemExit propagate. Ctrl-C during a long parallel
+                # backtest must actually cancel the run, not be eaten into
+                # PresetOutcome.error and rendered as a normal failure.
                 outcomes[slot] = PresetOutcome(error=exc)
 
     return outcomes

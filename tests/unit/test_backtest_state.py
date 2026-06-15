@@ -20,6 +20,7 @@ from dashboard.backtest_state import (
     persist_slot,
     recovered_last_backtest,
     recovered_metrics_state,
+    should_render_sparkline,
 )
 
 
@@ -177,6 +178,36 @@ def test_artifact_dir_for_strips_unsafe_chars() -> None:
 def test_artifact_dir_for_uses_default_root() -> None:
     p = artifact_dir_for("s1")
     assert p.startswith("artifacts/")
+
+
+# ----------------------------------------------------------------- N9
+
+
+def test_sparkline_renders_every_n_bars() -> None:
+    # N9 — line_chart re-renders the WHOLE equity curve each call; doing
+    # it every bar is O(n²) work on the worker thread. Default cadence is
+    # every 5 bars.
+    assert should_render_sparkline(5, 100) is True
+    assert should_render_sparkline(10, 100) is True
+    assert should_render_sparkline(4, 100) is False
+    assert should_render_sparkline(7, 100) is False
+
+
+def test_sparkline_renders_on_final_bar() -> None:
+    # Always render on the last bar so the user sees the complete curve
+    # when the run finishes, regardless of cadence remainder.
+    assert should_render_sparkline(125, 125) is True
+    assert should_render_sparkline(123, 123) is True  # cadence remainder 3
+
+
+def test_sparkline_skipped_at_or_before_day_zero() -> None:
+    assert should_render_sparkline(0, 100) is False
+    assert should_render_sparkline(-1, 100) is False
+
+
+def test_sparkline_cadence_configurable() -> None:
+    assert should_render_sparkline(10, 100, every=10) is True
+    assert should_render_sparkline(5, 100, every=10) is False
 
 
 # ----------------------------------------------------------------- import guard

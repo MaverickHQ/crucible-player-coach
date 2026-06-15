@@ -76,3 +76,51 @@ def test_load_snapshot_missing_raises(tmp_path: Path):
     import pytest
     with pytest.raises(FileNotFoundError):
         load_snapshot(tmp_path / "no-such-file.json")
+
+
+# ---------------------------------------------------------------- R6: typed encoder
+
+
+def test_save_snapshot_coerces_numpy_float_cleanly(tmp_path: Path):
+    # R6 — sharpe/sortino/calmar come back from numpy ops as float64. The
+    # old `default=str` stringified them silently, defeating the round-trip
+    # (restored "1.234" would crash `:.2%` formatting).
+    import numpy as np
+    payload = {
+        "metrics": {
+            "sharpe": np.float64(1.23),
+            "drawdown": np.float32(0.04),
+            "days_run": np.int64(125),
+        },
+    }
+    path = save_snapshot(payload, strategy_id="np", base_dir=tmp_path)
+    loaded = load_snapshot(path)
+    assert loaded["metrics"]["sharpe"] == 1.23
+    assert isinstance(loaded["metrics"]["sharpe"], float)
+    assert loaded["metrics"]["days_run"] == 125
+
+
+def test_save_snapshot_raises_on_unknown_type(tmp_path: Path):
+    # R6 — anything we don't know how to coerce raises rather than silently
+    # corrupting the snapshot via str(). Forces the bug to surface at the
+    # call site instead of months later when something tries to restore.
+    import pytest
+
+    class Mystery:
+        pass
+
+    with pytest.raises(TypeError, match="cannot serialize Mystery"):
+        save_snapshot({"thing": Mystery()}, strategy_id="x", base_dir=tmp_path)
+
+
+def test_save_snapshot_native_types_unchanged(tmp_path: Path):
+    # Native ints/floats/strings/lists/dicts pass through with no coercion.
+    payload = {
+        "label": "moderate",
+        "sharpe": 1.5,
+        "days_aborted": 0,
+        "equity": [100_000.0, 100_050.0],
+    }
+    path = save_snapshot(payload, strategy_id="native", base_dir=tmp_path)
+    loaded = load_snapshot(path)
+    assert loaded == payload

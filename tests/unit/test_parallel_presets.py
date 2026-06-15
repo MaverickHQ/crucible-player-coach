@@ -170,6 +170,24 @@ def test_thread_init_none_is_backwards_compatible():
     assert out["a"].result == 42
 
 
+def test_run_parallel_propagates_baseexception():
+    # R5 — KeyboardInterrupt / SystemExit are BaseException, not Exception.
+    # The old `except BaseException` captured them, so Ctrl-C during a long
+    # parallel backtest got eaten into PresetOutcome.error and the surrounding
+    # page rendered an error toast instead of letting the interrupt escape.
+    # Narrow to Exception so user-driven aborts propagate normally.
+    import pytest
+
+    class Interrupt(BaseException):
+        pass
+
+    def worker(_l, _e):
+        raise Interrupt("ctrl-c")
+
+    with pytest.raises(Interrupt):
+        run_parallel({"a": ("A", worker)})
+
+
 def test_thread_init_failure_does_not_kill_worker():
     # R3 — Streamlit internals change between versions; if the
     # ctx-attach call fails (e.g. private API moved), the page's

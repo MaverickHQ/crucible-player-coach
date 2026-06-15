@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import numbers
 import re
 import time
 from pathlib import Path
@@ -18,6 +19,31 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_DIR = Path("data/recovery")
 _SAFE_ID = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _coerce_numeric(obj: Any) -> Any:
+    """R6 — strict typed coercion replacing the old ``default=str``.
+
+    The previous serializer used ``default=str`` which silently stringified
+    every non-JSON-native value (numpy floats, datetimes, Decimals, Paths).
+    A snapshot saved with stringified numbers couldn't round-trip — restoring
+    it gave back ``"0.05"`` instead of ``0.05`` and the dashboard's ``:.2%``
+    formatting crashed.
+
+    We now handle the realistic numeric case explicitly (numpy scalars, Decimal,
+    other Real subclasses) and raise on anything else — silent corruption
+    becomes a loud test failure rather than a runtime crash months later.
+    """
+    if hasattr(obj, "item"):  # numpy scalar / 0-d array
+        return obj.item()
+    if isinstance(obj, numbers.Real):
+        return float(obj)
+    if isinstance(obj, numbers.Integral):
+        return int(obj)
+    raise TypeError(
+        f"recovery snapshot: cannot serialize {type(obj).__name__} to JSON; "
+        f"coerce explicitly at the call site"
+    )
 
 
 def _normalise(strategy_id: str) -> str:
@@ -37,7 +63,9 @@ def save_snapshot(
     # snapshots land in the same wall-clock millisecond.
     fname = f"{time.time_ns()}-{_normalise(strategy_id)}.json"
     path = directory / fname
-    path.write_text(json.dumps(payload, indent=2, default=str))
+    # R6 — strict encoder: known numeric types coerce cleanly, everything
+    # else raises rather than silently stringifying.
+    path.write_text(json.dumps(payload, indent=2, default=_coerce_numeric))
     return path
 
 

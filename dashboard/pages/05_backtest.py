@@ -12,6 +12,7 @@ from dashboard.backtest_state import (
     persist_slot,
     recovered_last_backtest,
     recovered_metrics_state,
+    should_render_sparkline,
 )
 from dashboard.db import get_store
 
@@ -265,7 +266,13 @@ if run_clicked:
                 )
                 panel["status"].caption(format_progress_status(payload))
                 panel["equity"].append(payload["capital"])
-                if len(panel["equity"]) >= 2:
+                # N9 — throttle: line_chart re-renders the whole growing list
+                # each call (O(n²) on the worker thread). Update every 5 bars
+                # plus the final bar so the user still sees a complete curve.
+                if (len(panel["equity"]) >= 2
+                        and should_render_sparkline(
+                            payload["day"], payload["total_days"]
+                        )):
                     panel["chart"].line_chart(panel["equity"], height=120)
 
             return BacktestRunner(

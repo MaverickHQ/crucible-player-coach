@@ -233,6 +233,44 @@ def test_on_day_callback_failure_swallowed(tmp_path: Path) -> None:
     assert result.days_run == 3  # ran to completion despite the boom
 
 
+def test_on_day_errors_counted_on_result(tmp_path: Path) -> None:
+    # N12 — a buggy UI subscriber used to be silently swallowed; now the
+    # count surfaces on BacktestResult.on_day_errors so the dashboard can
+    # flag broken progress updates instead of looking frozen.
+    def boom(_payload):
+        raise RuntimeError("ui blew up")
+    loop = MagicMock()
+    loop.run.return_value = _hold_artifact()
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s", on_day=boom)
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df(
+            [100.0, 101.0, 102.0])
+        result = runner.run(symbol="AMZN", start_date="2024-01-02",
+                            end_date="2024-01-15",
+                            constraints=_make_constraints(), output_dir=tmp_path)
+    # 3 bars, 3 callbacks, 3 raises → 3 counted errors.
+    assert result.on_day_errors == 3
+
+
+def test_on_day_errors_zero_when_subscriber_healthy(tmp_path: Path) -> None:
+    # Healthy subscriber → zero counted errors.
+    loop = MagicMock()
+    loop.run.return_value = _hold_artifact()
+    calls: list = []
+    runner = BacktestRunner(
+        loop=loop, db_store=MagicMock(), strategy_id="s",
+        on_day=lambda p: calls.append(p))
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_price_df(
+            [100.0, 101.0, 102.0])
+        result = runner.run(symbol="AMZN", start_date="2024-01-02",
+                            end_date="2024-01-15",
+                            constraints=_make_constraints(), output_dir=tmp_path)
+    assert result.on_day_errors == 0
+    assert len(calls) == 3
+
+
 def test_backtest_result_has_equity_curve(tmp_path: Path) -> None:
     prices = [185.0, 186.0, 187.0]
     result, _, _ = _run_with_prices(prices, tmp_path=tmp_path)

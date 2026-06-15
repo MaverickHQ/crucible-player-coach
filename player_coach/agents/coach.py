@@ -133,7 +133,8 @@ def _build_user_prompt(
 ) -> str:
     parts: list[str] = []
     parts.append("## Proposal\n" + json.dumps(proposal, indent=2))
-    parts.append("## Constraints\n" + json.dumps(constraints.to_dict(), indent=2))
+    # N10 — cached JSON; identical across rounds within a bar.
+    parts.append("## Constraints\n" + constraints.to_json())
     parts.append("## World state\n" + json.dumps(world_state, indent=2))
     parts.append("Evaluate this proposal now.")
     return "\n\n".join(parts)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -79,6 +80,23 @@ class ConstraintSchema:
             prefer_entry_below_vwap=data.get("prefer_entry_below_vwap", True),
             trailing_max_drawdown_pct=data.get("trailing_max_drawdown_pct"),
         )
+
+    def to_json(self) -> str:
+        """N10 — cached JSON serialization of this schema.
+
+        ``_build_user_prompt`` runs ``json.dumps(constraints.to_dict(), indent=2)``
+        once per Player call AND once per Coach call AND once per round —
+        up to 6 dumps per bar on Standard runs × 125 bars × 2 presets =
+        ~1500 redundant serializations per backtest. The resolved schema is
+        stable across rounds within a day, so cache the string once per
+        instance. Resolver returns a fresh instance per day so the cache
+        naturally invalidates.
+        """
+        cached = self.__dict__.get("_json_cache")
+        if cached is None:
+            cached = json.dumps(self.to_dict(), indent=2)
+            object.__setattr__(self, "_json_cache", cached)
+        return cached
 
     def to_dict(self) -> dict[str, Any]:
         return {

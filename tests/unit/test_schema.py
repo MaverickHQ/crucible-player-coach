@@ -70,3 +70,30 @@ def test_prefer_entry_below_vwap_defaults_true():
     without = {k: v for k, v in BASE.items() if k != "prefer_entry_below_vwap"}
     schema = ConstraintSchema.from_dict(without)
     assert schema.prefer_entry_below_vwap is True
+
+
+# ---------------------------------------------------------------- N10
+
+
+def test_to_json_caches_across_calls():
+    # N10 — within a single resolved-schema instance, to_json runs once.
+    # Resolver returns a fresh schema per bar, so the cache is naturally
+    # bar-scoped and across-round.
+    schema = ConstraintSchema.from_dict(BASE)
+    j1 = schema.to_json()
+    j2 = schema.to_json()
+    assert j1 is j2  # same string object, not just equal — cache hit
+
+
+def test_to_json_returns_to_dict_serialised():
+    schema = ConstraintSchema.from_dict(BASE)
+    import json as _json
+    assert _json.loads(schema.to_json()) == schema.to_dict()
+
+
+def test_to_json_distinct_instances_distinct_caches():
+    # Two separate schema instances each compute their own JSON the first
+    # time — the cache is per-instance, not module-level.
+    s1 = ConstraintSchema.from_dict(BASE)
+    s2 = ConstraintSchema.from_dict({**BASE, "max_position_pct": 0.20})
+    assert s1.to_json() != s2.to_json()

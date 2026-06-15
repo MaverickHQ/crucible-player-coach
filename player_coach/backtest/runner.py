@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -38,6 +39,8 @@ from player_coach.market import (
 )
 from player_coach.portfolio.state import PortfolioState
 
+_logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from player_coach.constraints.schema import ConstraintSchema
     from player_coach.database.store import DatabaseStore
@@ -71,6 +74,11 @@ class BacktestResult:
     # Feature 17 (A3): challenge P(pass) projected from this config's realised
     # edge — the challenge-specific evaluation criterion (vs raw return).
     mc_success_prob: float = 0.0
+    # N12: the on_day callback's `except Exception: pass` was unobservable —
+    # a buggy UI subscriber could silently corrupt every bar's progress
+    # update and the user would only notice a frozen sparkline. This
+    # counter surfaces it on the result so the page can flag a count > 0.
+    on_day_errors: int = 0
 
 
 @dataclass
@@ -115,12 +123,14 @@ class _RunnerPosition:
 
 
 def _compute_sma(prices, n: int) -> float:
+    # N11 — `prices` is OHLCVBuffer.closes → a numpy array. Use .mean() so
+    # the sum happens in C, not a Python loop over numpy scalars.
     length = len(prices)
     if length == 0:
         return 0.0
     if length < n:
         return float(prices[-1])
-    return float(sum(prices[-n:]) / n)
+    return float(prices[-n:].mean())
 
 
 def _gap_preserves_setup(
@@ -223,6 +233,7 @@ class BacktestRunner:
 
         days_run = 0
         days_aborted = 0
+        on_day_errors = 0
         exchanges: list[dict] = []
         realized_trade_returns: list[float] = []
         position_seq = 0
@@ -230,6 +241,16 @@ class BacktestRunner:
         equity_curve: list[tuple[str, float]] = []
         total_days = len(df)
         mc_prob: float | None = None
+        # N11 — cache trade_stats() across bars; recompute only when the
+        # realized returns list grew (a trade closed today).
+        _stats_cache: tuple[int, Any] | None = None
+
+        def _trade_stats_cached() -> Any:
+            nonlocal _stats_cache
+            n = len(realized_trade_returns)
+            if _stats_cache is None or _stats_cache[0] != n:
+                _stats_cache = (n, trade_stats(realized_trade_returns))
+            return _stats_cache[1]
 
         for day_index, (date, row) in enumerate(df.iterrows()):
             today_open = float(row["Open"])
@@ -265,7 +286,7 @@ class BacktestRunner:
                 if (len(realized_trade_returns) >= self._mc_min_trades
                         and day_index % self._mc_every == 0):
                     mc_prob = simulate_challenge(
-                        trade_stats(realized_trade_returns),
+                        _trade_stats_cached(),
                         profit_target=self._profit_target,
                         drawdown_limit=constraints.trailing_max_drawdown_pct,
                         days_remaining=max(0, total_days - day_index),
@@ -309,7 +330,7 @@ class BacktestRunner:
                     constraints, world_state
                 )
 
-                stats = trade_stats(realized_trade_returns)
+                stats = _trade_stats_cached()
                 if stats.count > 0:
                     world_state["kelly_fraction"] = half_kelly(
                         stats, cap=resolved_constraints.max_single_trade_pct
@@ -400,15 +421,20 @@ class BacktestRunner:
                 open=today_open, high=high, low=low,
                 close=close, volume=volume,
             )
-            daily_pnl = sum(p.daily_change(close) for p in open_positions)
-            position_value = sum(p.value(close) for p in open_positions)
+            # N11 — single pass over open_positions accumulating daily_pnl AND
+            # position_value AND updating prev_close. Was 3 separate loops.
+            daily_pnl = 0.0
+            position_value = 0.0
+            for p in open_positions:
+                daily_pnl += p.daily_change(close)
+                position_value += p.value(close)
+                p.prev_close = close
             capital = cash_available + position_value
             peak_capital = max(peak_capital, capital)
             cumulative_pnl = capital - initial_capital
             daily_starting_balance = capital
             equity_curve.append((str(date)[:10], capital))
-            for p in open_positions:
-                p.prev_close = close
+            # (prev_close was updated above in the single-pass MTM loop)
             days_run += 1
 
             self._db_store.save_portfolio_snapshot({
@@ -444,7 +470,11 @@ class BacktestRunner:
                         "mc_success_prob": mc_prob,
                     })
                 except Exception:
-                    pass
+                    # N12 — was a silent `except: pass`. Now counted on the
+                    # result and logged so a broken subscriber doesn't quietly
+                    # ruin every bar's progress update.
+                    on_day_errors += 1
+                    _logger.exception("on_day subscriber raised; counted on result")
 
             if outcome == "ABORT" and termination_reason == "mll_breached":
                 break
@@ -472,6 +502,7 @@ class BacktestRunner:
             total_pnl=total_pnl,
             total_pnl_pct=total_pnl_pct,
             max_drawdown_pct=max_drawdown_pct,
+            on_day_errors=on_day_errors,
             exchanges=exchanges,
             equity_curve=equity_curve,
             sharpe=sharpe_ratio(equity_curve),

@@ -125,6 +125,18 @@ def metrics_panel_slots(m: dict[str, Any]) -> list[tuple[str, str, dict[str, Any
     return out
 
 
+def should_render_sparkline(day: int, total_days: int, every: int = 5) -> bool:
+    """N9 — throttle live sparkline updates so we don't re-render a growing
+    list every bar (O(n²) worker-thread cost). Update every ``every`` bars
+    plus the final bar so the user always sees a complete curve at the end.
+    """
+    if day <= 0:
+        return False
+    if day == total_days:
+        return True
+    return day % every == 0
+
+
 def artifact_dir_for(strategy_id: str, base: str = "artifacts") -> str:
     """N3 — per-strategy artifact directory.
 
