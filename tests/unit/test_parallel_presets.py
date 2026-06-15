@@ -3,8 +3,8 @@
 The dashboard's two presets are independent — running them sequentially doubles
 wall clock for no benefit. ``run_parallel`` runs them concurrently in a thread
 pool, returning a per-preset result dict. Failures are isolated (one preset
-crashing must not derail the other), and per-preset callbacks remain wired so
-the dashboard's progress bars and sparklines keep updating live.
+crashing must not derail the other). Per-preset progress callbacks are wired
+via the worker's own closure over its panel — no separate event channel.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from dashboard.parallel import PresetOutcome, run_parallel
 def test_run_parallel_actually_runs_concurrently():
     # Two jobs that each sleep 0.4s sequentially would take ~0.8s; concurrently
     # ~0.4s. Allow generous headroom for CI jitter.
-    def slow(_label, _on_event):
+    def slow(_label):
         time.sleep(0.4)
         return "ok"
 
@@ -37,10 +37,10 @@ def test_run_parallel_actually_runs_concurrently():
 # ------------------------------------------------------------ failure isolation
 
 def test_failure_in_one_preset_does_not_kill_the_other():
-    def winner(_label, _on_event):
+    def winner(_label):
         return "won"
 
-    def loser(_label, _on_event):
+    def loser(_label):
         raise RuntimeError("boom")
 
     out = run_parallel({"a": ("A", winner), "b": ("B", loser)})
@@ -51,10 +51,10 @@ def test_failure_in_one_preset_does_not_kill_the_other():
 
 
 def test_both_failing_returns_both_errors():
-    def boom_a(_label, _on_event):
+    def boom_a(_label):
         raise ValueError("a-bad")
 
-    def boom_b(_label, _on_event):
+    def boom_b(_label):
         raise ValueError("b-bad")
 
     out = run_parallel({"a": ("A", boom_a), "b": ("B", boom_b)})
@@ -62,39 +62,8 @@ def test_both_failing_returns_both_errors():
     assert "b-bad" in str(out["b"].error)
 
 
-# ------------------------------------------------------ callback / payload isolation
-
-def test_per_preset_callbacks_do_not_cross_talk():
-    # Each preset's on_event payload must include its own slot key — never the
-    # other's. Lock guards list mutation under the thread pool.
-    lock = threading.Lock()
-    seen: dict[str, list[str]] = {"a": [], "b": []}
-
-    def worker(label, on_event):
-        for tag in ("start", "mid", "end"):
-            on_event(f"{label}:{tag}")
-        return label
-
-    def cb_factory(slot):
-        def cb(msg):
-            with lock:
-                seen[slot].append(msg)
-        return cb
-
-    run_parallel(
-        {"a": ("A", worker), "b": ("B", worker)},
-        on_events={"a": cb_factory("a"), "b": cb_factory("b")},
-    )
-
-    # Each preset's callback received only its own messages.
-    assert all(m.startswith("A:") for m in seen["a"]), seen["a"]
-    assert all(m.startswith("B:") for m in seen["b"]), seen["b"]
-    assert len(seen["a"]) == 3
-    assert len(seen["b"]) == 3
-
-
 def test_returns_preset_outcome_objects():
-    out = run_parallel({"a": ("A", lambda _l, _e: 1)})
+    out = run_parallel({"a": ("A", lambda _l: 1)})
     assert isinstance(out["a"], PresetOutcome)
 
 
@@ -116,7 +85,7 @@ def test_thread_init_runs_once_per_submit():
         with lock:
             init_threads.append(threading.get_ident())
 
-    def worker(_label, _on_event):
+    def worker(_label):
         # Sleep so both workers stay alive concurrently — guarantees the
         # pool spins up two threads, matching real backtests (long I/O on
         # every bar).
@@ -143,7 +112,7 @@ def test_thread_init_runs_before_worker_on_same_thread():
         with lock:
             events.append((threading.get_ident(), "init"))
 
-    def worker(_label, _on_event):
+    def worker(_label):
         with lock:
             events.append((threading.get_ident(), "work"))
         return "ok"
@@ -164,9 +133,8 @@ def test_thread_init_runs_before_worker_on_same_thread():
 
 def test_thread_init_none_is_backwards_compatible():
     # R3 — existing callers don't pass thread_init; the helper must keep
-    # working unchanged (otherwise we break every existing test in this
-    # file).
-    out = run_parallel({"a": ("A", lambda _l, _e: 42)})
+    # working unchanged.
+    out = run_parallel({"a": ("A", lambda _l: 42)})
     assert out["a"].result == 42
 
 
@@ -181,7 +149,7 @@ def test_run_parallel_propagates_baseexception():
     class Interrupt(BaseException):
         pass
 
-    def worker(_l, _e):
+    def worker(_l):
         raise Interrupt("ctrl-c")
 
     with pytest.raises(Interrupt):
@@ -197,7 +165,7 @@ def test_thread_init_failure_does_not_kill_worker():
         raise RuntimeError("streamlit API moved")
 
     out = run_parallel(
-        {"a": ("A", lambda _l, _e: "won")},
+        {"a": ("A", lambda _l: "won")},
         thread_init=init,
     )
     assert out["a"].result == "won"

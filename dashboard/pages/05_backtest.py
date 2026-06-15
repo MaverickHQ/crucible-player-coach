@@ -367,9 +367,9 @@ if run_clicked:
 
         outcomes = run_parallel(
             {
-                "a": (preset_a, lambda label, _on_event:
+                "a": (preset_a, lambda _label:
                       _runner(strategy_id_a, constraints_a, panels["a"])),
-                "b": (preset_b, lambda label, _on_event:
+                "b": (preset_b, lambda _label:
                       _runner(strategy_id_b, constraints_b, panels["b"])),
             },
             thread_init=_attach_ctx,
@@ -393,6 +393,12 @@ if run_clicked:
             st.error(f"Backtest {preset_b} failed: {outcomes['b'].error}")
         else:
             snap_b = _persist_preset("b", preset_b, result_b)
+            # R9 — mirror A's success toast so the two slots have symmetric
+            # UX. The previous code only confirmed A.
+            st.success(
+                f"{preset_b} finished — total return {snap_b['total_return']:.2%}, "
+                f"P(pass) {snap_b['metrics']['mc_success_prob']:.0%}."
+            )
 
         # If either failed, we've persisted the survivor; bail before the
         # comparison (which needs both results).
@@ -432,7 +438,22 @@ if run_clicked:
 # snapshot on disk, offer to rehydrate. Saves a previously-dropped 30-min run.
 if not st.session_state.get("last_backtest"):
     from dashboard.recovery import list_recoverable
-    _recoverable = list_recoverable()
+
+    # R10 — Streamlit reruns the script on every interaction; without this
+    # cache, every slider/button move globs `data/recovery/*.json`, stats
+    # every file, and JSON-parses each payload. 10s TTL is plenty for a
+    # banner that only matters on page load.
+    @st.cache_data(ttl=10)
+    def _cached_recoverable() -> list:
+        # Strip non-pickleable Path objects out of the cached entries by
+        # round-tripping through `str` — cache_data needs hashable returns.
+        return [
+            {"path": str(item["path"]), "mtime": item["mtime"],
+             "payload": item["payload"]}
+            for item in list_recoverable()
+        ]
+
+    _recoverable = _cached_recoverable()
     if _recoverable:
         from datetime import datetime
         _newest = _recoverable[0]

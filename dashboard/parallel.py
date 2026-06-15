@@ -2,27 +2,26 @@
 
 Two presets are independent: running them sequentially doubles wall clock for
 no payoff. This runs each as a thread in a fixed pool, isolates failures so a
-crash in one preset can't derail the other, and routes each preset's progress
-events to its own callback.
+crash in one preset can't derail the other.
 
 R3 — Streamlit widget mutations (`st.empty()`, `st.progress()`,
 `st.line_chart()`) made from a thread without a ScriptRunContext attached are
 silently dropped on Streamlit ≥1.25 (logs `NoSessionContext` and updates the
 wrong session). The dashboard's `_on_day` closure mutates exactly such
-widgets, so the page needs to attach its own ctx to each worker thread before
-the worker runs. ``thread_init`` is the seam: a Streamlit-agnostic callable
-the caller can wire to ``add_script_run_ctx(threading.current_thread(), ctx)``.
+widgets, so the page attaches its own ctx to each worker thread before the
+worker runs via ``thread_init``: a Streamlit-agnostic callable wired to
+``add_script_run_ctx(threading.current_thread(), ctx)`` at the call site.
 """
 from __future__ import annotations
 
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
-# A worker takes the preset's display label and an event callback, returns
-# anything (the actual backtest result, in practice).
-PresetWorker = Callable[[str, Callable[[Any], None]], Any]
+# A worker takes the preset's display label and returns anything (the actual
+# backtest result, in practice). The page wires per-preset progress callbacks
+# via the worker's own closure over its panel — no separate event channel.
+PresetWorker = Callable[[str], Any]
 
 
 @dataclass(frozen=True)
@@ -35,17 +34,15 @@ class PresetOutcome:
 
 def run_parallel(
     jobs: dict[str, tuple[str, PresetWorker]],
-    on_events: dict[str, Callable[[Any], None]] | None = None,
     thread_init: Callable[[], None] | None = None,
 ) -> dict[str, PresetOutcome]:
     """Run each ``(label, worker)`` job concurrently, returning per-slot
     outcomes.
 
     ``jobs`` is keyed by a slot name (``"a"`` / ``"b"`` in practice); each value
-    is ``(display_label, worker_fn)``. ``on_events`` maps slot → callback; the
-    worker receives a no-op callback if no entry is provided. Worker exceptions
-    are captured on the corresponding ``PresetOutcome.error`` — they never
-    propagate out, so one preset failing leaves the other free to finish.
+    is ``(display_label, worker_fn)``. Worker exceptions are captured on the
+    corresponding ``PresetOutcome.error`` — they never propagate out, so one
+    preset failing leaves the other free to finish.
 
     ``thread_init`` is called once per worker thread, on that thread, before
     the worker runs. The dashboard uses this to attach a Streamlit
@@ -55,12 +52,9 @@ def run_parallel(
     Streamlit-internals change can't crash a long backtest — the observable
     failure mode becomes "progress UI looks frozen", not "run aborted".
     """
-    on_events = on_events or {}
-    noop: Callable[[Any], None] = lambda _e: None  # noqa: E731
     outcomes: dict[str, PresetOutcome] = {}
 
-    def _attached(worker: PresetWorker, label: str,
-                  on_event: Callable[[Any], None]) -> Any:
+    def _attached(worker: PresetWorker, label: str) -> Any:
         if thread_init is not None:
             try:
                 thread_init()
@@ -69,18 +63,14 @@ def run_parallel(
                 # Streamlit version that moves add_script_run_ctx would
                 # otherwise abort every parallel backtest on first call.
                 pass
-        return worker(label, on_event)
+        return worker(label)
 
-    # Re-create the thread pool per call (matches the prior behaviour); each
-    # worker carries the attached ctx so per-call workers see the right
-    # session even if Streamlit reuses thread pool threads internally elsewhere.
     with ThreadPoolExecutor(
         max_workers=max(1, len(jobs)),
         thread_name_prefix="bt-preset",
     ) as pool:
         futures = {
-            slot: pool.submit(_attached, worker, label,
-                              on_events.get(slot, noop))
+            slot: pool.submit(_attached, worker, label)
             for slot, (label, worker) in jobs.items()
         }
         for slot, future in futures.items():
@@ -94,9 +84,3 @@ def run_parallel(
                 outcomes[slot] = PresetOutcome(error=exc)
 
     return outcomes
-
-
-# Silence the unused-import lint; ``threading`` is part of the public contract
-# documented in the docstring (callers wire `threading.current_thread()` into
-# `add_script_run_ctx`).
-_ = threading
