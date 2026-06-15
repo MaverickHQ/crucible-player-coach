@@ -887,3 +887,33 @@ def test_runner_drops_entry_when_gap_inverts_short_direction(tmp_path: Path) -> 
             constraints=_make_constraints(), output_dir=tmp_path,
         )
     assert result.total_pnl == 0.0
+
+
+# ---------------------------------------------------------------------------
+# R4 — defensive guard on artifact["rounds"][-1] indexing
+# ---------------------------------------------------------------------------
+
+
+def test_runner_handles_approve_artifact_with_empty_rounds(tmp_path: Path) -> None:
+    # R4 — `dict.get("rounds", [{}])` only returns the default when the key
+    # is ABSENT. If a CoachLoop short-circuit ever emits
+    # `{"outcome": "APPROVE", "rounds": []}` (explicit empty list), the
+    # subsequent `[-1]` raises IndexError, the exception bubbles out of
+    # runner.run, and the whole run dies mid-day. Guard so an empty-rounds
+    # APPROVE is interpreted as "no actions proposed" — no fills, no crash.
+    opens = [100.0, 100.0]
+    closes = [100.0, 100.0]
+    loop = MagicMock()
+    loop.run.side_effect = [{
+        "outcome": "APPROVE", "run_id": "r", "rounds": [],
+    }]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    # No entry attempted → no PnL, no aborts, run completes.
+    assert result.total_pnl == 0.0
+    assert result.days_aborted == 0

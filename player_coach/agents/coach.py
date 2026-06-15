@@ -3,6 +3,7 @@ import json
 import os
 from typing import Any
 
+from player_coach.agents._caching import build_cached_system, read_cache_tokens
 from player_coach.constraints.schema import ConstraintSchema
 
 
@@ -47,11 +48,7 @@ class CoachAgent:
                 max_tokens=1024,
                 # Static, large system prompt — cache it. See PlayerAgent for
                 # the same pattern and motivation.
-                system=[{
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }],
+                system=build_cached_system(_SYSTEM_PROMPT),
                 messages=[{"role": "user", "content": user_content}],
             )
         except Exception as e:
@@ -81,9 +78,7 @@ class CoachAgent:
             "critique": parsed.get("critique"),
             "tokens_used": {
                 "coach": usage.input_tokens + usage.output_tokens,
-                "cache_read_coach": int(
-                    getattr(usage, "cache_read_input_tokens", 0) or 0
-                ),
+                "cache_read_coach": read_cache_tokens(usage),
             },
         }
 

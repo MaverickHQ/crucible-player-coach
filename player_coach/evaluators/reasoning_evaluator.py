@@ -3,6 +3,8 @@ import json
 import os
 from typing import Any
 
+from player_coach.agents._caching import build_cached_system
+
 
 def _extract_json(text: str) -> str:
     depth = 0
@@ -86,7 +88,9 @@ class ReasoningEvaluator:
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=256,
-                system=_SYSTEM_PROMPT,
+                # N6 — same cached-system block as PlayerAgent/CoachAgent so
+                # Standard runs don't pay full input cost on every round.
+                system=build_cached_system(_SYSTEM_PROMPT),
                 messages=[{"role": "user", "content": user_content}],
             )
         except Exception:

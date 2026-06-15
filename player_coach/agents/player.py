@@ -4,6 +4,7 @@ import os
 import re
 from typing import Any
 
+from player_coach.agents._caching import build_cached_system, read_cache_tokens
 from player_coach.constraints.schema import ConstraintSchema
 
 
@@ -56,11 +57,7 @@ class PlayerAgent:
                 # static prompt is paid in full on the first call (within the
                 # 5-min TTL window) and served at ~10% input cost on subsequent
                 # calls within the same backtest day.
-                system=[{
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }],
+                system=build_cached_system(_SYSTEM_PROMPT),
                 messages=[{"role": "user", "content": user_content}],
             )
         except Exception as e:
@@ -79,9 +76,7 @@ class PlayerAgent:
             "reasoning": parsed.get("reasoning", ""),
             "tokens_used": {
                 "player": usage.input_tokens + usage.output_tokens,
-                "cache_read_player": int(
-                    getattr(usage, "cache_read_input_tokens", 0) or 0
-                ),
+                "cache_read_player": read_cache_tokens(usage),
             },
         }
 

@@ -5,6 +5,7 @@ from collections.abc import Generator
 
 import anthropic
 
+from player_coach.agents._caching import build_cached_system
 from player_coach.agents.player import _SYSTEM_PROMPT, _build_user_prompt, _extract_json
 from player_coach.constraints.schema import ConstraintSchema
 
@@ -23,7 +24,9 @@ def stream_player_decision(
     with client.messages.stream(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
-        system=_SYSTEM_PROMPT,
+        # N6 — cached system block so streaming exchanges share the same
+        # ephemeral 5-min cache as the non-streaming path.
+        system=build_cached_system(_SYSTEM_PROMPT),
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
         for chunk in stream.text_stream:

@@ -129,9 +129,14 @@ class CoachLoop:
                     "violations": violations,
                     "feedback": feedback,
                 },
+                # N5 — forward every key the agents reported, not just the
+                # bare 'player'/'coach' counts. Otherwise cache_read_player /
+                # cache_read_coach get dropped before reaching the DB or the
+                # dashboard's token panel, and T1's whole observability
+                # promise (cache-hit %) is invisible downstream.
                 "tokens_used": {
-                    "player": player_result["tokens_used"]["player"],
-                    "coach": coach_result["tokens_used"]["coach"],
+                    **player_result["tokens_used"],
+                    **coach_result["tokens_used"],
                 },
                 "reasoning_score": reasoning_result.get("reasoning_score"),
                 "reasoning_critique": reasoning_result.get("reasoning_critique"),

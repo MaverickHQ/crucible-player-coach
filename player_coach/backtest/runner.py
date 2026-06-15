@@ -328,7 +328,13 @@ class BacktestRunner:
                 termination_reason = artifact.get("termination_reason")
 
                 if outcome == "APPROVE":
-                    for action in artifact.get("rounds", [{}])[-1].get(
+                    # R4 — dict.get default only fires when the key is absent;
+                    # an explicit `rounds: []` (a CoachLoop short-circuit that
+                    # approves without a round) would otherwise IndexError on
+                    # the [-1] and kill the day. Treat empty rounds as "no
+                    # actions proposed".
+                    _rounds = artifact.get("rounds") or [{}]
+                    for action in _rounds[-1].get(
                         "proposal", {}
                     ).get("actions", []):
                         action_type = action.get("action_type")
