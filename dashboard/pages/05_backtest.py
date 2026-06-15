@@ -5,6 +5,14 @@ from datetime import date, timedelta
 
 import streamlit as st
 
+from dashboard.backtest_state import (
+    artifact_dir_for,
+    fresh_metrics_state,
+    metrics_panel_slots,
+    persist_slot,
+    recovered_last_backtest,
+    recovered_metrics_state,
+)
 from dashboard.db import get_store
 
 _PRESETS: dict[str, dict] = {
@@ -103,12 +111,14 @@ def _render_metrics_panel(m: dict) -> None:
     if m.get("mode"):
         st.caption(f"Backtest depth: **{mode_label(m['mode'])}**")
     st.markdown("**Risk-adjusted metrics**")
-    for col, label, key in zip(
-        st.columns(2), (m["label_a"], m["label_b"]), ("a", "b")
-    ):
+    # N4 — iterate only the slots that actually carry data; partial
+    # persistence (preset error mid-run, or single-preset recovery) leaves
+    # 'b' missing/None and the previous m['b'] indexing would crash.
+    slots = metrics_panel_slots(m)
+    cols = st.columns(max(1, len(slots)))
+    for col, (label, _slot, mm) in zip(cols, slots):
         with col:
             st.caption(label)
-            mm = m[key]
             st.metric(
                 "P(pass)", f"{mm['mc_success_prob']:.0%}",
                 help=("Projected challenge pass probability from the realised "
@@ -126,22 +136,20 @@ def _render_metrics_panel(m: dict) -> None:
             for caveat in metric_caveats(mm):
                 st.caption(f"ℹ️ {caveat}")
     st.markdown("**Walk-forward** (out-of-sample, 60/30 anchored)")
-    for col, label, key in zip(
-        st.columns(2), (m["label_a"], m["label_b"]), ("wf_a", "wf_b")
-    ):
+    cols = st.columns(max(1, len(slots)))
+    for col, (label, slot, _mm) in zip(cols, slots):
         with col:
-            wf = m.get(key, {"oos_sharpe": 0.0, "folds": 0})
+            wf = m.get(f"wf_{slot}") or {"oos_sharpe": 0.0, "folds": 0}
             st.caption(label)
             st.metric("OOS Sharpe", f"{wf['oos_sharpe']:.2f}",
                       help=f"{wf['folds']} fold(s)")
 
     st.markdown("**Regime breakdown** (count · approve rate)")
-    for col, label, key in zip(
-        st.columns(2), (m["label_a"], m["label_b"]), ("regime_a", "regime_b")
-    ):
+    cols = st.columns(max(1, len(slots)))
+    for col, (label, slot, _mm) in zip(cols, slots):
         with col:
             st.caption(label)
-            breakdown = m[key]
+            breakdown = m.get(f"regime_{slot}")
             if breakdown:
                 st.table([
                     {"regime": r, "count": d["count"],
@@ -270,6 +278,9 @@ if run_clicked:
                 start_date=str(start_date),
                 end_date=str(end_date),
                 constraints=constraints,
+                # N3 — per-strategy artifact dir so parallel presets don't
+                # mingle outputs in the shared 'artifacts/' root.
+                output_dir=artifact_dir_for(strategy_id),
             )
 
         from dashboard.recovery import save_snapshot
@@ -279,11 +290,22 @@ if run_clicked:
             walk_forward_report,
         )
 
-        def _persist_preset(label: str, result, other_label: str) -> dict:
+        # N8 — Run-click scrubs any prior run's metrics dict. The previous
+        # code merged into st.session_state["last_metrics"] via `or {...}`
+        # fallback, leaving a stale 'b' slot rendering alongside the new
+        # 'a' while preset_b's thread was still in flight.
+        st.session_state["last_metrics"] = fresh_metrics_state(
+            preset_a, preset_b, mode
+        )
+
+        def _persist_preset(slot: str, label: str, result) -> dict:
             """Persist a single preset's result as soon as it finishes.
 
             Writes to disk (recovery), DB (Prior runs), and session_state — so a
-            disconnect after this returns can't lose what we just earned.
+            disconnect after this returns can't lose what we just earned. R1 —
+            ``slot`` is a parameter, never derived from label equality; the
+            user picking the same preset name for A and B can't collide both
+            writes into one slot.
             """
             metrics = backtest_metrics(result, mode=mode)
             preset_snapshot = {
@@ -300,19 +322,14 @@ if run_clicked:
                 "max_drawdown": result.max_drawdown_pct,
             }
             save_snapshot(
-                preset_snapshot, strategy_id=f"{label}-{symbol}-{start_date}",
+                preset_snapshot,
+                strategy_id=f"{slot}-{label}-{symbol}-{start_date}",
             )
-            # Mirror into session_state under per-preset keys so a fresh page
-            # render can show "Latest results" even if only one preset finished.
-            partial = st.session_state.get("last_metrics") or {
-                "label_a": preset_a, "label_b": preset_b,
-            }
-            partial["mode"] = mode
-            slot = "a" if label == preset_a else "b"
-            partial[slot] = metrics
-            partial[f"regime_{slot}"] = preset_snapshot["regime"]
-            partial[f"wf_{slot}"] = preset_snapshot["wf"]
-            st.session_state["last_metrics"] = partial
+            partial = st.session_state["last_metrics"]
+            persist_slot(
+                partial, slot, metrics,
+                preset_snapshot["regime"], preset_snapshot["wf"],
+            )
             st.session_state[f"last_result_{slot}"] = preset_snapshot
             return preset_snapshot
 
@@ -339,7 +356,7 @@ if run_clicked:
         if outcomes["a"].error is not None:
             st.error(f"Backtest {preset_a} failed: {outcomes['a'].error}")
         else:
-            snap_a = _persist_preset(preset_a, result_a, preset_b)
+            snap_a = _persist_preset("a", preset_a, result_a)
             st.success(
                 f"{preset_a} finished — total return {snap_a['total_return']:.2%}, "
                 f"P(pass) {snap_a['metrics']['mc_success_prob']:.0%}."
@@ -347,7 +364,7 @@ if run_clicked:
         if outcomes["b"].error is not None:
             st.error(f"Backtest {preset_b} failed: {outcomes['b'].error}")
         else:
-            snap_b = _persist_preset(preset_b, result_b, preset_a)
+            snap_b = _persist_preset("b", preset_b, result_b)
 
         # If either failed, we've persisted the survivor; bail before the
         # comparison (which needs both results).
@@ -399,33 +416,11 @@ if not st.session_state.get("last_backtest"):
                 f"at {_when} (return {_payload.get('total_return', 0):.2%})."
             )
             if st.button("Restore", key="recover_btn"):
-                metrics = _payload.get("metrics", {})
-                slot = "a"  # show recovered preset on the left
-                st.session_state["last_metrics"] = {
-                    "label_a": _payload.get("label", "recovered"),
-                    "label_b": "—",
-                    slot: metrics,
-                    "b": {},
-                    f"regime_{slot}": _payload.get("regime", {}),
-                    "regime_b": {},
-                    f"wf_{slot}": _payload.get("wf", {"oos_sharpe": 0.0, "folds": 0}),
-                    "wf_b": {"oos_sharpe": 0.0, "folds": 0},
-                }
-                st.session_state["last_backtest"] = {
-                    "preset_a": _payload.get("label", "recovered"),
-                    "preset_b": "—",
-                    "symbol": _payload.get("symbol"),
-                    "start_date": _payload.get("start_date"),
-                    "end_date": _payload.get("end_date"),
-                    "approve_rate_a": 0.0, "approve_rate_b": 0.0,
-                    "avg_rounds_a": 0.0, "avg_rounds_b": 0.0,
-                    "days_aborted_a": _payload.get("days_aborted", 0),
-                    "days_aborted_b": 0,
-                    "total_return_a": _payload.get("total_return", 0.0),
-                    "total_return_b": 0.0,
-                    "max_drawdown_a": _payload.get("max_drawdown", 0.0),
-                    "max_drawdown_b": 0.0,
-                }
+                # R2 — _b fields stay None (not 0.0/0) so _render_record's
+                # None-guard skips comparison rows rather than flagging '—'
+                # as the winner on lower-is-better metrics.
+                st.session_state["last_metrics"] = recovered_metrics_state(_payload)
+                st.session_state["last_backtest"] = recovered_last_backtest(_payload)
                 st.rerun()
 
 _last = st.session_state.get("last_backtest")
