@@ -104,16 +104,21 @@ def _action_artifact(action: dict) -> dict:
 
 
 def _enter_no_id() -> dict:
+    # N2: lenient stop/tp that survive any reasonable bar-open gap — these
+    # generic helpers exist for tests that just want "any approved entry".
+    # Tests that exercise gap-rejection build their own action with tight
+    # values inline.
     return {
         "action_type": "enter_long", "symbol": "AMZN", "size_pct": 0.02,
-        "entry_price": 185.0, "stop_loss": 183.0, "take_profit": 200.0,
+        "entry_price": 185.0, "stop_loss": 1.0, "take_profit": 10_000.0,
     }
 
 
 def _enter_artifact() -> dict:
+    # N2: lenient stop/tp — see note on _enter_no_id.
     return _action_artifact({
         "action_type": "enter_long", "symbol": "AMZN", "size_pct": 0.05,
-        "entry_price": 185.0, "stop_loss": 183.0, "take_profit": 200.0,
+        "entry_price": 185.0, "stop_loss": 1.0, "take_profit": 10_000.0,
         "position_id": "P1",
     })
 
@@ -771,3 +776,114 @@ def test_decision_time_consistency_breached_when_today_gap_exceeds_rule(tmp_path
         )
     day2_status = loop.run.call_args_list[1].kwargs["world_state"]["consistency_status"]
     assert day2_status == "breached"
+
+
+# ---------------------------------------------------------------------------
+# N2 — fill-time re-validation of the Coach-approved setup
+#
+# The Coach validates direction (long: stop<entry<tp; short: tp<entry<stop)
+# and min_risk_reward against the Player's PROPOSED entry_price. The runner
+# fills at today_open. If today's gap moves entry past the stop or take_profit
+# (direction inverted) or compresses the reward/risk distance below the
+# schema's min_risk_reward, the trade the Coach approved is no longer the
+# trade we'd execute. The runner must drop the entry rather than fill on
+# broken geometry.
+# ---------------------------------------------------------------------------
+
+
+def _enter_with_stops(stop: float, take_profit: float, size_pct: float = 0.05) -> dict:
+    """Build a long-entry artifact with explicit stop/tp — used by N2 tests
+    where the gap from proposed entry to today's open must drive rejection."""
+    return _action_artifact({
+        "action_type": "enter_long", "symbol": "AMZN", "size_pct": size_pct,
+        "entry_price": 100.0, "stop_loss": stop, "take_profit": take_profit,
+        "position_id": "P1",
+    })
+
+
+def test_runner_drops_entry_when_gap_inverts_long_direction(tmp_path: Path) -> None:
+    # N2 — Player proposes long at 100 (stop 99, tp 110) — Coach approves.
+    # Day 1 opens at 95 — entry would fill BELOW the proposed stop. The setup
+    # is broken: stop (99) is now ABOVE entry (95), inverting the long. The
+    # runner must skip this entry rather than book a position with an
+    # immediately-stopped-out shape.
+    opens = [100.0, 95.0]
+    closes = [100.0, 95.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_with_stops(stop=99.0, take_profit=110.0)]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    # No position was booked: total_exchanges = 1 (Coach was still called),
+    # but capital is unchanged from initial.
+    assert result.total_pnl == 0.0
+
+
+def test_runner_drops_entry_when_gap_compresses_rr_below_min(tmp_path: Path) -> None:
+    # N2 — Coach approved on proposed RR. After the gap-up, the reward
+    # shrinks faster than the risk → actual RR < min_risk_reward (1.5).
+    # Setup: stop=80, tp=110. Proposed entry=100 → RR=(110-100)/(100-80)=0.5.
+    # That's already below 1.5 — Coach normally wouldn't approve. But the
+    # Coach is mocked: it returns APPROVE regardless. The runner's NEW check
+    # catches it.
+    opens = [100.0, 100.0]
+    closes = [100.0, 100.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_with_stops(stop=80.0, take_profit=110.0)]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    # Entry skipped — total_pnl stays at zero.
+    assert result.total_pnl == 0.0
+
+
+def test_runner_keeps_entry_when_gap_preserves_valid_setup(tmp_path: Path) -> None:
+    # N2 — Sanity: a small gap that still preserves direction and RR ≥ 1.5
+    # must NOT be skipped. Setup: stop=70, tp=200. Today opens at 100 — long
+    # direction OK (70 < 100 < 200), RR=(200-100)/(100-70)=3.33 > 1.5. Entry
+    # should fill normally; day 2 marks to 100 → ~0 P&L on the position.
+    opens = [100.0, 100.0]
+    closes = [100.0, 100.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_with_stops(stop=70.0, take_profit=200.0)]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    # Entry fired: capital reduced by transaction cost on the round-trip
+    # entry half (0.05% of 5000 = 2.5). Position still open at the end so
+    # no realised P&L; capital is initial - entry_tc = 99_997.5.
+    assert result.total_pnl == pytest.approx(-2.5, abs=0.1)
+
+
+def test_runner_drops_entry_when_gap_inverts_short_direction(tmp_path: Path) -> None:
+    # N2 — Symmetric case for shorts. Coach approves a short at 100 with
+    # stop=101, tp=90 (short: tp < entry < stop). Day 1 opens at 102 — entry
+    # fills ABOVE the stop, inverting the short. Skip.
+    opens = [100.0, 102.0]
+    closes = [100.0, 102.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_action_artifact({
+        "action_type": "enter_short", "symbol": "AMZN", "size_pct": 0.05,
+        "entry_price": 100.0, "stop_loss": 101.0, "take_profit": 90.0,
+        "position_id": "S1",
+    })]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        result = runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    assert result.total_pnl == 0.0

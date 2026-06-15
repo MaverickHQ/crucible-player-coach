@@ -123,6 +123,37 @@ def _compute_sma(prices, n: int) -> float:
     return float(sum(prices[-n:]) / n)
 
 
+def _gap_preserves_setup(
+    direction: str,
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float,
+    min_risk_reward: float,
+) -> bool:
+    """N2 — at fill time, the Player's proposed entry_price has been replaced
+    with today's open. The Coach already approved direction + RR against the
+    proposal; re-check both against the actual fill so we don't book a trade
+    whose geometry the gap has broken.
+
+    Returns False for malformed proposals (non-positive stop/tp) and for any
+    fill where the gap inverts direction or compresses RR below the schema's
+    floor. Uses the same |tp - entry| / |entry - stop| formula the Coach
+    uses (player_coach/agents/coach.py:108), so the two paths cannot diverge.
+    """
+    if stop_loss <= 0 or take_profit <= 0:
+        return False
+    if direction == "long":
+        if not (stop_loss < entry_price < take_profit):
+            return False
+    else:  # short
+        if not (take_profit < entry_price < stop_loss):
+            return False
+    risk = abs(entry_price - stop_loss)
+    if risk == 0:
+        return False
+    return abs(take_profit - entry_price) / risk >= min_risk_reward
+
+
 class BacktestRunner:
     def __init__(
         self,
@@ -305,9 +336,22 @@ class BacktestRunner:
                             direction = (
                                 "short" if action_type == "enter_short" else "long"
                             )
-                            size_pct = float(action.get("size_pct", 0.0))
                             # Fill at today's OPEN — the actionable price.
                             entry_price = today_open
+                            # N2 — Coach approved direction + RR against the
+                            # Player's proposal, but the fill price is today's
+                            # open. If the gap broke the geometry, skip rather
+                            # than book a trade the Coach would never approve
+                            # at the actual fill price.
+                            if not _gap_preserves_setup(
+                                direction,
+                                entry_price,
+                                float(action.get("stop_loss", 0.0)),
+                                float(action.get("take_profit", 0.0)),
+                                resolved_constraints.min_risk_reward,
+                            ):
+                                continue
+                            size_pct = float(action.get("size_pct", 0.0))
                             cost = capital * size_pct
                             pid = (
                                 action.get("position_id")
