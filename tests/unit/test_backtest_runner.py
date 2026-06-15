@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from player_coach.backtest.runner import BacktestResult, BacktestRunner
 from player_coach.constraints.schema import ConstraintSchema
@@ -664,3 +665,109 @@ def test_exit_fills_at_current_bar_open(tmp_path: Path) -> None:
     # Use a wide window because day 3 still marks to its close (no open
     # position by then, so close mark only affects timing, not realised P&L).
     assert 3500 < result.total_pnl < 4500
+
+
+# ---------------------------------------------------------------------------
+# N1 + N7 — decision-time PortfolioState fidelity
+#
+# Both come from the local code-review backlog (2026-06-15). A1 left
+# PortfolioState.daily_pnl pinned to 0.0 at decision time and routed
+# yesterday's realised P&L into consistency_status — both make hard breakers
+# and the F13 soft signal silent. The correct value at decision time is the
+# overnight gap MTM on open positions: the unrealised move from yesterday's
+# close to today's open, which is what the breakers and the consistency
+# signal should mechanically check before the Player is even asked.
+# ---------------------------------------------------------------------------
+
+
+def test_decision_time_daily_pnl_reflects_overnight_gap(tmp_path: Path) -> None:
+    # N1 — at decision time portfolio_state.daily_pnl must carry the
+    # overnight gap MTM on open positions, so the daily_loss_limit breaker
+    # (`is_daily_loss_breached(daily_pnl, daily_starting_balance)`) can fire
+    # pre-LLM on a gap loser. Old behaviour: hardcoded 0.0 → breaker dies.
+    #
+    # Setup: day 1 enters at open=100 (size_pct=0.05 → cost=5000), day 1
+    # closes flat at 100 → position prev_close=100 at EOD. Day 2 gaps to
+    # open=60: gap_mtm = (60-100)/100 * 5000 = -2000 = -2% of starting cap.
+    opens = [100.0, 100.0, 60.0]
+    closes = [100.0, 100.0, 60.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_at(100.0), _hold_artifact()]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    # Decision on day 2 corresponds to loop call index 1 (day 0 had no decision).
+    day2_ps = loop.run.call_args_list[1].kwargs["portfolio_state"]
+    assert day2_ps.daily_pnl == pytest.approx(-2000.0, abs=1.0)
+
+
+def test_decision_time_daily_pnl_zero_when_no_overnight_book(tmp_path: Path) -> None:
+    # N1 corollary — first decision (day 1) has no positions yet (day 0
+    # didn't decide), so gap MTM is exactly 0. The breaker correctly does
+    # nothing on day 1.
+    opens = [100.0, 60.0]
+    closes = [100.0, 60.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_hold_artifact()]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    day1_ps = loop.run.call_args_list[0].kwargs["portfolio_state"]
+    assert day1_ps.daily_pnl == 0.0
+
+
+def test_decision_time_consistency_uses_today_gap_not_prior_day(tmp_path: Path) -> None:
+    # N7 — consistency_status at decision time uses today's projected day-PnL
+    # (the overnight gap MTM), not yesterday's full realised P&L. Old code
+    # passed prior_daily_pnl=cumulative_pnl on day 2 → ratio 1.0 → "breached"
+    # every time the first day was profitable. New code passes a small gap
+    # (or 0) → status reflects today's risk, not yesterday's outcome.
+    #
+    # Setup: day 1 enters at open=100, closes +10% at 110 → cumulative=+500
+    # at EOD (position prev_close=110). Day 2 opens at 110 — gap_mtm = 0.
+    # Under old logic consistency_status(500, 500) → "breached". Under new
+    # logic consistency_status(0, 500) → "ok".
+    opens = [100.0, 100.0, 110.0]
+    closes = [100.0, 110.0, 110.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_at(100.0), _hold_artifact()]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    day2_status = loop.run.call_args_list[1].kwargs["world_state"]["consistency_status"]
+    assert day2_status == "ok"
+
+
+def test_decision_time_consistency_breached_when_today_gap_exceeds_rule(tmp_path: Path) -> None:
+    # N7 (positive case) — when today's gap MTM exceeds consistency_rule_pct
+    # of cumulative profit, the signal correctly says "breached". This pins
+    # that the gap-MTM-based signal still surfaces real breaches.
+    #
+    # Setup: day 1 enters at 100, closes +4% at 104 → tiny cumulative=+200
+    # (size_pct=0.05 → cost=5000, 4% of 5000=200). Day 2 opens at 110 — gap
+    # = (110-104)/104 * 5000 ≈ +288. 288/200 = 144% > 50% rule → "breached".
+    opens = [100.0, 100.0, 110.0]
+    closes = [100.0, 104.0, 110.0]
+    loop = MagicMock()
+    loop.run.side_effect = [_enter_at(100.0), _hold_artifact()]
+    runner = BacktestRunner(loop=loop, db_store=MagicMock(), strategy_id="s")
+    with patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.return_value = _make_ohlc_df(opens, closes)
+        runner.run(
+            symbol="AMZN", start_date="2024-01-02", end_date="2024-01-15",
+            constraints=_make_constraints(), output_dir=tmp_path,
+        )
+    day2_status = loop.run.call_args_list[1].kwargs["world_state"]["consistency_status"]
+    assert day2_status == "breached"

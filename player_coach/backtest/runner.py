@@ -199,9 +199,6 @@ class BacktestRunner:
         equity_curve: list[tuple[str, float]] = []
         total_days = len(df)
         mc_prob: float | None = None
-        # A1: consistency_status at decision time looks at the MOST RECENT
-        # realized daily P&L (yesterday's MTM), since today's hasn't happened.
-        prior_daily_pnl = 0.0
 
         for day_index, (date, row) in enumerate(df.iterrows()):
             today_open = float(row["Open"])
@@ -226,6 +223,13 @@ class BacktestRunner:
                 closes = buffer.closes  # buffer holds bars [0..day_index-1]
                 prior_close = float(closes[-1])
 
+                # N1 + N7 — overnight gap MTM on held positions. This is the
+                # ONLY P&L that has accrued by decision time today (no trades
+                # yet), and it's the mechanically correct input for both the
+                # daily_loss_limit breaker AND the F13 consistency signal:
+                # "if you locked in right now, this is today's day_pnl".
+                gap_mtm = sum(p.daily_change(today_open) for p in open_positions)
+
                 # F14: recompute P(pass) on cadence.
                 if (len(realized_trade_returns) >= self._mc_min_trades
                         and day_index % self._mc_every == 0):
@@ -245,7 +249,7 @@ class BacktestRunner:
                     cash_available=cash_available,
                     # Seam 0: the Player sees its open book and can propose exits.
                     open_positions=list(open_positions),
-                    daily_pnl=0.0,           # no MTM applied yet — decision time
+                    daily_pnl=gap_mtm,
                     cumulative_pnl=cumulative_pnl,
                 )
 
@@ -264,7 +268,7 @@ class BacktestRunner:
                     challenge_pnl_pct=challenge_pnl_pct,
                     challenge_phase=phase,
                     consistency_status=constraints.consistency_status(
-                        prior_daily_pnl, cumulative_pnl
+                        gap_mtm, cumulative_pnl
                     ),
                     mc_success_prob=mc_prob,
                 )
@@ -355,7 +359,6 @@ class BacktestRunner:
             equity_curve.append((str(date)[:10], capital))
             for p in open_positions:
                 p.prev_close = close
-            prior_daily_pnl = daily_pnl  # the freshly-realised day P&L
             days_run += 1
 
             self._db_store.save_portfolio_snapshot({
