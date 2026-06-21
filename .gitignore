@@ -9,7 +9,7 @@ build/
 .venv/
 
 # Artifacts and outputs
-artifacts/
+/artifacts/
 outputs/
 
 # Environment
