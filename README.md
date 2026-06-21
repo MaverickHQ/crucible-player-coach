@@ -4,7 +4,7 @@
 
 ![Player-Coach Demo](docs/demo.gif)
 
-[▶ Live dashboard](https://crucible-player-coach.streamlit.app) · [▶ Watch the demo](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1) · [PyPI](https://pypi.org/project/player-coach-core/)
+[▶ Live dashboard](https://crucible-player-coach.streamlit.app) · [▶ Watch the demo](https://github.com/MaverickHQ/crucible-player-coach/releases/latest) · [PyPI](https://pypi.org/project/player-coach-core/)
 
 ---
 
@@ -15,14 +15,21 @@ A PlayerAgent proposes trading actions; a CoachAgent evaluates every proposal me
 ## Installation
 
 ```bash
-# Core infrastructure
+# Core (constraint schema, breaker registry, evaluators)
 pip install player-coach-core
 
-# With LLM agents
+# With LLM agents (Anthropic SDK)
 pip install player-coach-core[llm]
+
+# With market layer — required for BacktestRunner
+# (yfinance OHLCV + numpy/pandas + hmmlearn regime + arch GARCH)
+pip install player-coach-core[market]
 
 # With Streamlit dashboard
 pip install player-coach-core[dashboard]
+
+# Everything
+pip install player-coach-core[market,llm,dashboard]
 ```
 
 Requires `ANTHROPIC_API_KEY` for LLM agents.
@@ -84,6 +91,8 @@ streamlit run dashboard/app.py
 
 ## Constraint schema
 
+Minimal example below — see `player_coach.constraints.schema.ConstraintSchema` for the full 17-field dataclass, including the Phase 3A fields (`min_stop_atr_multiple`, `prefer_entry_below_vwap`), Phase 3B fields (`consistency_warn_pct`, `trailing_max_drawdown_pct`), and intraday cutoff (`trading_cutoff_time`).
+
 ```json
 {
   "max_position_pct": 0.15,
@@ -109,14 +118,21 @@ Five presets in `examples/constraints/`:
 
 ## Running locally
 
+A one-shot CoachLoop call with a minimal world state. For the full
+backtest path (with regime detection, GARCH volatility, ATR stops,
+VWAP, Kelly sizing, walk-forward, etc.) use `BacktestRunner` — it
+builds the enriched world state for you. A complete runnable example
+lives in `scripts/demo_player_coach.py`.
+
 ```python
-from player_coach.agents.player import PlayerAgent
+import json
+from pathlib import Path
+
 from player_coach.agents.coach import CoachAgent
+from player_coach.agents.player import PlayerAgent
 from player_coach.artifacts.writer import ArtifactWriter
 from player_coach.constraints.schema import ConstraintSchema
 from player_coach.loop.coach_loop import CoachLoop
-import json
-from pathlib import Path
 
 constraints = ConstraintSchema.from_dict(
     json.loads(Path("examples/constraints/moderate.json").read_text())
@@ -130,10 +146,12 @@ loop = CoachLoop(
 
 artifact = loop.run(
     world_state={
-        "symbol": "AMZN", "price": 185.0,
-        "sma5": 183.0, "sma10": 180.0,
-        "volume": 45_000_000, "position": "flat",
-        "volatility_regime": "medium", "session": "NY_open",
+        "symbol": "AMZN",
+        "price": 185.0,
+        "sma5": 183.0,
+        "sma10": 180.0,
+        "volume": 45_000_000,
+        "session": "NY_open",
     },
     constraints=constraints,
 )
@@ -163,7 +181,7 @@ Part of the [Executable World Models](https://harveygill.substack.com) series on
 
 ![Player-Coach Demo](docs/demo.gif)
 
-[▶ Full demo video](https://github.com/MaverickHQ/crucible-player-coach/releases/tag/v1.0.1)
+[▶ Full demo video](https://github.com/MaverickHQ/crucible-player-coach/releases/latest)
 
 ---
 
@@ -171,12 +189,17 @@ Part of the [Executable World Models](https://harveygill.substack.com) series on
 
 | Component | Role |
 |---|---|
-| `PlayerAgent` | Proposes 1–3 actions given world state. Claude Haiku, max_tokens=1024. |
+| `PlayerAgent` | Proposes 1–3 actions given world state. Claude Haiku, max_tokens=512. |
 | `CoachAgent` | Evaluates proposals against constraint schema. max_tokens=1024. |
-| `CoachLoop` | Orchestrates exchange. Up to 3 rounds. Writes artifact to disk and SQLite. |
-| `circuit_breakers` | MLL, daily loss limit, consistency rule, trading cutoff — pure functions. |
-| `ConstraintDeriver` | Derives constraint schema from ewm-core evidence policy. |
-| `BacktestRunner` | Replays CoachLoop over historical trading days via yfinance. |
+| `CoachLoop` | Orchestrates exchange. Up to 3 rounds (Fast=1 / Standard=3). Writes artifact to disk and SQLite. |
+| `BreakerRegistry` | MLL, daily loss limit, consistency rule, trading cutoff — registered hard stops, priority-ordered. |
+| `ConstraintResolver` | Layers regime overlay, GARCH volatility scaling, and challenge-phase profile onto the base schema per bar. |
+| `WorldStateEnricher` | Seam 4 — runs Phase 3A market features (`RegimeFeature` HMM, `GARCHFeature` arch, `ATRFeature`, `VWAPFeature`) onto each bar's world state. |
+| `BacktestRunner` | Replays CoachLoop over historical days via yfinance with bar-timing fidelity (decide on t-1 close, fill at t open). Single-pass MTM, cached trade stats. |
+| `simulate_challenge` | F14 Monte Carlo — projects P(pass) for the prop challenge from the realised edge. |
+| `walk_forward_report` | F15 — out-of-sample Sharpe over anchored 60/30 windows. |
+| `metrics` | F17 (Sharpe/Sortino/Calmar) + F18 (drawdown duration, recovery time) + F19 (per-regime decomposition). |
+| `ArtifactWriter` | UUID-named JSON per exchange, with rounds, tokens (incl. cache_read), violations, and the resolved constraint snapshot. |
 | `DatabaseStore` | SQLite persistence for exchanges, rounds, strategies, portfolio snapshots. |
 
 ---
@@ -203,8 +226,10 @@ Four hard stops checked before every round, in priority order:
 
 ## Project status
 
-**v1.1.0 — complete.** Backend, dashboard, tests, and PyPI
-package all shipped.
+**v2.0.1 — complete.** Backend (Phase 3A market layer, Phase 3B
+prop trading infra, Phase 4A backtest quality), dashboard (live
+progress, parallel presets, Fast/Standard depth, crash-safe
+recovery), 516 tests, and PyPI package all shipped.
 
 Backlog: AWS AgentCore deployment — PlayerAgent and
 CoachAgent as separate Lambda functions, Step Functions
