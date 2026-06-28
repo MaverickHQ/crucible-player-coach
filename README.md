@@ -164,16 +164,24 @@ print(f"Rounds:  {artifact['rounds_taken']}")
 
 ## Essays
 
-Each essay is paired with a working implementation.
+This repo is the working implementation behind essays **2–7** of
+[**The Crucible**](https://harveygill.substack.com/p/the-crucible) series.
+
+![The Crucible series overview](docs/crucible-series.png)
 
 | # | Title | Link |
 |---|---|---|
-| 8 | The Adversarial Quality Loop | [Read →](https://harveygill.substack.com/p/the-adversarial-quality-loop) |
-| 9 | Building the Player-Coach Loop | [Read →](https://harveygill.substack.com/p/building-the-player-coach-loop) |
-| 10 | Closing the Evidence Loop | Coming soon |
-| 11 | The Quality of Reasoning | Coming soon |
+| 2 | The Adversarial Quality Loop | [Read →](https://harveygill.substack.com/p/the-adversarial-quality-loop) |
+| 3 | Building the Player-Coach Loop | [Read →](https://harveygill.substack.com/p/building-the-player-coach-loop) |
+| 4 | Closing the Evidence Loop | [Read →](https://harveygill.substack.com/p/closing-the-evidence-loop) |
+| 5 | The Quality of Reasoning | [Read →](https://harveygill.substack.com/p/the-quality-of-reasoning) |
+| 6 | The Quant Layer | Coming soon |
+| 7 | Survival Is the Strategy | Coming soon |
 
-Part of the [Executable World Models](https://harveygill.substack.com) series on harveygill.substack.com.
+Essay 1 (_Decisions That Don't Disappear_) lives in
+[crucible-ewm](https://github.com/MaverickHQ/crucible-ewm); essays 8–9 in
+[crucible-autoresearcher](https://github.com/MaverickHQ/crucible-autoresearcher).
+Full series on [harveygill.substack.com](https://harveygill.substack.com/p/the-crucible).
 
 ---
 
@@ -219,7 +227,8 @@ Four hard stops checked before every round, in priority order:
 
 | Repo | What |
 |---|---|
-| [crucible-ewm](https://github.com/MaverickHQ/crucible-ewm) | Observable agent trajectories, evidence policy, ewm-core |
+| [crucible-ewm](https://github.com/MaverickHQ/crucible-ewm) | Claude in the agent slot — observable trajectories, evidence policy, ewm-core (essay 1) |
+| [crucible-autoresearcher](https://github.com/MaverickHQ/crucible-autoresearcher) | Autonomous experimentation (essays 8–9, coming soon) |
 | [beyond-tokens](https://github.com/MaverickHQ/beyond-tokens) | Constrained LLM planning on AWS Bedrock |
 
 ---
